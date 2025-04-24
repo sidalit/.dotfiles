@@ -13,9 +13,9 @@ __pdf_merge() {
     local output_pdf="output_merged.pdf"
 
     pdfs=("${@}")
-    __check_pdf__ "${pdfs}" || return 1
+    __check_pdf__ "${pdfs[@]}" || return 1
 
-    qpdf --empty --pages ${pdfs[@]} -- ${output_pdf}
+    qpdf --empty --pages "${pdfs[@]}" -- ${output_pdf}
     [ $? -eq 0 ] || return 1 && echo "success: merged PDFs into ${output_pdf}"
 }
 
