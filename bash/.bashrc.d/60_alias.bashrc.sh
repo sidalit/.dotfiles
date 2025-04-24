@@ -30,7 +30,7 @@ alias lsblk='lsblk -p -o NAME,FSTYPE,PARTLABEL,FSSIZE,FSAVAIL,FSUSE%,MOUNTPOINTS
 alias m='[ -f "Makefile" ] && make -s -j`getconf _NPROCESSORS_ONLN`'
 alias tree='LC_COLLATE=C tree -aC -I ".git|node_modules|bower_components|plugged|__pycache__|CMakeFiles" --dirsfirst'
 alias gtree='git ls-tree -r --name-only HEAD | LC_COLLATE=C \tree -aC --fromfile --dirsfirst'
-alias dtrx='dtrx --noninteractive'
+alias dtrx='ouch decompress'
 
 # -rr - read-only mode (prevents delete and spawn shell)
 alias ncdu='ncdu -rr -x -X ~/.ignore'

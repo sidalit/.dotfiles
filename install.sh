@@ -76,7 +76,7 @@ pacman_utils=(
     nmap gnu-netcat lsof detox sshfs lzop aspell-en bind-tools ctags
     boost catch2 fmt mbedtls nlohmann-json acpica dtc autoconf-archive
     gptfdisk bc git-cliff navi ventoy virt-manager swtpm minisign
-    qemu-user-static qemu-user-static-binfmt xorg-apps
+    qemu-user-static qemu-user-static-binfmt xorg-apps ouch
 )
 pacman_dev=(
     vim neovim python-pynvim
@@ -116,7 +116,7 @@ yay_tools=(
     google-chrome teams teamviewer sublime-text-4 ticktick
 )
 yay_utils=(
-    bfs dtrx bitwise zoxide tio libtree zoom standardnotes-desktop
+    bfs bitwise zoxide tio libtree zoom standardnotes-desktop
 )
 yay_customization=(
     tela-icon-theme colorpicker
