@@ -246,7 +246,7 @@ else
 fi
 
 cd "${DIR_REPOS_UI}/Qogir-theme"
-./install.sh -d "${HOME}/.themes" -t default -c dark -i default --tweaks square
+./install.sh -d "${HOME}/.themes" -g -t default -c dark -i default --tweaks square
 
 if [[ ! -d "${DIR_REPOS_UI}/Qogir-icon-theme" ]]; then
     git clone --recursive "${REPO_QOGIR_ICN_THEME}" "${DIR_REPOS_UI}/Qogir-icon-theme" 1>/dev/null --depth 1
