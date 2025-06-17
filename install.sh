@@ -206,14 +206,16 @@ mkdir -p "${DIR_ARM_64_TOOLCHAIN}"
 echo "======= Install toolchains ======="
 
 if [[ ! -d "${DIR_ARM_32_TOOLCHAIN}" ]]; then
-    wget -cO- "${URL_ARM_32_TOOLCHAIN_11_2}" | \
-        tar xf - -J -C "${DIR_ARM_32_TOOLCHAIN}" --strip-components=1
+    mkdir -p ${DIR_ARM_32_TOOLCHAIN}
 fi
+wget -cO- "${URL_ARM_32_TOOLCHAIN_11_2}" | \
+    tar xf - -J -C "${DIR_ARM_32_TOOLCHAIN}" --strip-components=1
 
 if [[ ! -d "${DIR_ARM_64_TOOLCHAIN}" ]]; then
-    wget -cO- "${URL_ARM_64_TOOLCHAIN_11_2}" | \
-        tar xf - -J -C "${DIR_ARM_64_TOOLCHAIN}" --strip-components=1
+    mkdir -p ${DIR_ARM_64_TOOLCHAIN}
 fi
+wget -cO- "${URL_ARM_64_TOOLCHAIN_11_2}" | \
+    tar xf - -J -C "${DIR_ARM_64_TOOLCHAIN}" --strip-components=1
 
 ###############################################################################
 #                                 activation                                  #
