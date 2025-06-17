@@ -24,7 +24,10 @@ amend() {
             echo "note: no modified/staged files, nothing to amend"
             return 1
         fi
-        git commit --all --amend --no-edit &> /dev/null
+        git commit --all --amend --no-edit 1> /dev/null
+        if [ $? -ne 0 ]; then
+            return 1
+        fi
     fi
     echo "success: amend to \"`git log -n 1 --pretty=format:%s HEAD`\""
 }
