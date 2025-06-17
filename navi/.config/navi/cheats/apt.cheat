@@ -1,0 +1,25 @@
+% packages, debian/ubuntu
+
+# list installed packages
+apt list
+
+# find which package contains a file
+sudo apt update && dpkg -S <file>
+
+# list files installed by a package [local]
+sudo apt update && dpkg -L <installed_package>
+
+# list files installed by a package [online]
+sudo apt-file update && apt-file list <online_package>
+
+# install a package
+sudo apt install <online_package>
+
+# list info on package
+apt show <installed_package>
+
+# remove package
+sudo apt remove --purge <installed_package>
+
+$ installed_package: dpkg-query -W -f='${binary:Package}\n'
+$ online_package: apt list
