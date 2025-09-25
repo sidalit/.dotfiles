@@ -75,8 +75,9 @@ ee()
 		fi
 	fi
 
-	log "run: dd $@"
-	dd $@
+	cmd="dd $@ status=progress conv=fsync"
+	log "run: ${cmd}"
+	${cmd}
 	if [ $? -eq 0 ]; then
 		log "sync in progress..."
 		sync
