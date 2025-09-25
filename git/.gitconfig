@@ -37,11 +37,8 @@
 [includeIf "gitdir:~/.dotfiles/"]
     path = ~/.gitconfig.personal
 
-[includeIf "gitdir:~/project/wavelit/"]
-    path = ~/.gitconfig.wavelit
-
-[includeIf "gitdir:~/project/cysec/"]
-    path = ~/.gitconfig.cysec
+[includeIf "gitdir:~/project/canonical/"]
+    path = ~/.gitconfig.canonical
 
 [commit]
     gpgsign = true
