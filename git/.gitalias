@@ -1,6 +1,6 @@
 [alias]
     alias = !git config --list | grep 'alias\\.' | sed 's/alias\\.\\([^=]*\\)=\\(.*\\)/\\1\\t=> \\2/' | sort
-    lg = log --format='%C(green)%h %C(cyan)%an%C(yellow)%d%C(reset) %s' -25
+    lg = log --format='%C(green)%h %C(cyan)%an%C(yellow)%d%C(reset) %s'
     lga = lg --graph --all
     root = rev-parse --show-toplevel
     show-name = show --pretty='%C(green)%h %C(cyan)%an%C(yellow)%C(reset) %s' --name-status
