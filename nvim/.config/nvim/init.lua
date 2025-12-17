@@ -1,0 +1,6 @@
+require('config.options')
+require('config.filetypes')
+require('config.keymaps')
+require('config.autocmds')
+require('config.commands')
+require('config.lazy')
