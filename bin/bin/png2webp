@@ -1,0 +1,285 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+# png2webp.sh
+# Convert PNGs to WebP from an input folder OR single file.
+# Default: input=./originals, output=./ (current folder)
+# Defaults: metadata stripped, parallel jobs = nproc
+
+SCRIPT_NAME="$(basename "$0")"
+
+# -------- defaults --------
+INPUT_DIR="./originals"
+OUTPUT_DIR="."
+RECURSIVE=0
+
+LOSSLESS=0
+QUALITY=82
+METHOD=6
+SHARP_YUV=1
+
+# Metadata stripped by default
+METADATA="none"   # none|all|icc|exif|xmp
+
+OVERWRITE=0
+DRY_RUN=0
+VERBOSE=0
+LOG_FILE=""
+
+# Default to all CPU cores if available
+if command -v nproc >/dev/null 2>&1; then
+  JOBS="$(nproc)"
+else
+  JOBS=1
+fi
+
+# -------- logging --------
+ts() { date +"%Y-%m-%d %H:%M:%S"; }
+
+log() {
+  local level="$1"; shift
+  local msg="[$(ts)] [$level] $*"
+  if [[ -n "${LOG_FILE}" ]]; then
+    printf '%s\n' "$msg" | tee -a "$LOG_FILE" >&2
+  else
+    printf '%s\n' "$msg" >&2
+  fi
+}
+
+die() { log "ERROR" "$*"; exit 1; }
+
+usage() {
+  cat >&2 <<EOF
+Usage: $SCRIPT_NAME [options]
+
+Converts PNG files from an input folder (or a single file) to WebP files
+in the output folder, keeping the same base name.
+Defaults: input=./originals, output=./
+
+Options:
+  -i, --input PATH         Input directory or file (default: ./originals)
+  -o, --output DIR         Output directory (default: current folder)
+  -r, --recursive          Recurse into subfolders (if input is directory)
+
+  -q, --quality N          Lossy quality 0-100 (default: 82).
+                           Ignored in --lossless
+      --lossless           Use lossless WebP (default: lossy)
+
+      --aggressive         Aggressive lossy compression preset:
+                           sets -q 65, keeps -m 6 and -sharp_yuv (forces lossy mode)
+
+  -m, --method N           Compression method 0-6 (default: 6)
+      --no-sharp-yuv       Disable sharp_yuv (enabled by default in lossy mode)
+      --metadata VALUE     Metadata: none|all|icc|exif|xmp (default: none)
+
+      --overwrite          Overwrite existing .webp outputs
+      --dry-run            Print actions without writing files
+
+  -j, --jobs N             Parallel jobs (default: nproc)
+  -l, --log FILE           Append logs to FILE (also prints to stderr)
+  -v, --verbose            Extra logging
+  -h, --help               Show help
+
+Examples:
+  # Convert whole folder
+  $SCRIPT_NAME -i ./images
+
+  # Convert single file
+  $SCRIPT_NAME -i ./images/logo.png
+
+  # Aggressive preset
+  $SCRIPT_NAME --aggressive
+EOF
+}
+
+# -------- helpers --------
+need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing dependency: $1"; }
+
+human_bytes() {
+  local n="$1"
+  if command -v numfmt >/dev/null 2>&1; then
+    numfmt --to=iec --suffix=B "$n"
+  else
+    printf "%sB" "$n"
+  fi
+}
+
+file_size_bytes() { stat -c '%s' "$1" 2>/dev/null || echo 0; }
+
+validate_int_range() {
+  local val="$1" min="$2" max="$3" name="$4"
+  [[ "$val" =~ ^[0-9]+$ ]] || die "$name must be an integer ($min-$max), got: $val"
+  (( val >= min && val <= max )) || die "$name must be between $min and $max, got: $val"
+}
+
+# -------- argument parsing --------
+AGGRESSIVE=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -i|--input) INPUT_DIR="$2"; shift 2 ;;
+    -o|--output) OUTPUT_DIR="$2"; shift 2 ;;
+    -r|--recursive) RECURSIVE=1; shift ;;
+
+    -q|--quality) QUALITY="$2"; shift 2 ;;
+    --lossless) LOSSLESS=1; shift ;;
+    --aggressive) AGGRESSIVE=1; shift ;;
+
+    -m|--method) METHOD="$2"; shift 2 ;;
+    --no-sharp-yuv) SHARP_YUV=0; shift ;;
+    --metadata) METADATA="$2"; shift 2 ;;
+
+    --overwrite) OVERWRITE=1; shift ;;
+    --dry-run) DRY_RUN=1; shift ;;
+
+    -j|--jobs) JOBS="$2"; shift 2 ;;
+    -l|--log) LOG_FILE="$2"; shift 2 ;;
+    -v|--verbose) VERBOSE=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) die "Unknown argument: $1 (use --help)" ;;
+  esac
+done
+
+# -------- apply presets --------
+if [[ "$AGGRESSIVE" -eq 1 ]]; then
+  LOSSLESS=0
+  QUALITY=65
+  METHOD=6
+  SHARP_YUV=1
+fi
+
+# -------- validation --------
+need_cmd cwebp
+need_cmd find
+need_cmd xargs
+
+# Check if input exists (file or directory)
+[[ -e "$INPUT_DIR" ]] || die "Input not found: $INPUT_DIR"
+
+[[ -d "$OUTPUT_DIR" ]] || mkdir -p "$OUTPUT_DIR" || die "Cannot create output directory: $OUTPUT_DIR"
+
+validate_int_range "$METHOD" 0 6 "Method"
+validate_int_range "$JOBS" 1 512 "Jobs"
+if [[ "$LOSSLESS" -eq 0 ]]; then
+  validate_int_range "$QUALITY" 0 100 "Quality"
+fi
+
+case "$METADATA" in
+  none|all|icc|exif|xmp) : ;;
+  *) die "Invalid --metadata value: $METADATA (use none|all|icc|exif|xmp)" ;;
+esac
+
+OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
+
+# Resolve Input Path (File or Directory)
+if [[ -d "$INPUT_DIR" ]]; then
+  INPUT_DIR="$(cd "$INPUT_DIR" && pwd)"
+  IS_FILE=0
+else
+  # It's a file, resolve absolute path
+  INPUT_DIR="$(cd "$(dirname "$INPUT_DIR")" && pwd)/$(basename "$INPUT_DIR")"
+  IS_FILE=1
+fi
+
+log "INFO" "Input:     $INPUT_DIR"
+log "INFO" "Output:    $OUTPUT_DIR"
+log "INFO" "Mode:      $([[ "$LOSSLESS" -eq 1 ]] && echo "lossless" || echo "lossy")"
+log "INFO" "Quality:   $QUALITY $([[ "$AGGRESSIVE" -eq 1 ]] && echo '(aggressive preset)')"
+log "INFO" "Method:    $METHOD"
+log "INFO" "Recursive: $RECURSIVE"
+log "INFO" "Jobs:      $JOBS"
+log "INFO" "Overwrite: $OVERWRITE"
+log "INFO" "Dry-run:   $DRY_RUN"
+log "INFO" "Metadata:  $METADATA"
+log "INFO" "SharpYUV:  $SHARP_YUV"
+
+# -------- build cwebp args --------
+CWEBP_ARGS=()
+if [[ "$LOSSLESS" -eq 1 ]]; then
+  CWEBP_ARGS+=(-lossless)
+else
+  CWEBP_ARGS+=(-q "$QUALITY")
+fi
+CWEBP_ARGS+=(-m "$METHOD" -metadata "$METADATA")
+if [[ "$SHARP_YUV" -eq 1 && "$LOSSLESS" -eq 0 ]]; then
+  CWEBP_ARGS+=(-sharp_yuv)
+fi
+
+# -------- find files --------
+log "INFO" "Scanning for files..."
+
+if [[ "$IS_FILE" -eq 1 ]]; then
+    # Input is a single file
+    PNGS=("$INPUT_DIR")
+else
+    # Input is a directory, use find
+    FIND_ARGS=("$INPUT_DIR")
+    if [[ "$RECURSIVE" -eq 0 ]]; then
+      FIND_ARGS+=(-maxdepth 1)
+    fi
+    FIND_ARGS+=(-type f \( -iname "*.png" \) -print0)
+
+    mapfile -d '' PNGS < <(find "${FIND_ARGS[@]}" 2>/dev/null || true)
+fi
+
+COUNT="${#PNGS[@]}"
+[[ "$COUNT" -gt 0 ]] || die "No files found in: $INPUT_DIR"
+log "INFO" "Found $COUNT file(s) to process."
+
+# -------- conversion function (exported for xargs) --------
+convert_one() {
+  local img="$1"
+  local base out
+
+  # Remove extension .png (or others if input was manual file)
+  base="$(basename "$img" .png)"
+  out="$OUTPUT_DIR/${base}.webp"
+
+  if [[ -f "$out" && "$OVERWRITE" -eq 0 ]]; then
+    [[ "$VERBOSE" -eq 1 ]] && log "SKIP" "Exists: $out"
+    return 0
+  fi
+
+  local in_size out_size
+  in_size="$(file_size_bytes "$img")"
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    log "DRYRUN" "cwebp ${CWEBP_ARGS[*]} \"$img\" -o \"$out\""
+    return 0
+  fi
+
+  # Safer: write to temp then atomically move
+  local tmp="${out}.tmp.$$"
+  if ! cwebp "${CWEBP_ARGS[@]}" "$img" -o "$tmp" >/dev/null 2>&1; then
+    rm -f "$tmp" >/dev/null 2>&1 || true
+    log "ERROR" "Failed: $img"
+    return 1
+  fi
+  mv -f "$tmp" "$out"
+
+  out_size="$(file_size_bytes "$out")"
+  local saved=$(( in_size - out_size ))
+  local pct=0
+  if (( in_size > 0 )); then
+    pct=$(( (saved * 100) / in_size ))
+  fi
+  log "OK" "$(basename "$img") -> $(basename "$out") | $(human_bytes "$in_size") -> $(human_bytes "$out_size") | -${pct}%"
+}
+
+export -f convert_one log ts die human_bytes file_size_bytes
+export OUTPUT_DIR OVERWRITE DRY_RUN VERBOSE
+export -a CWEBP_ARGS
+
+# -------- run conversion --------
+log "INFO" "Converting..."
+FAIL=0
+
+printf '%s\0' "${PNGS[@]}" | xargs -0 -n 1 -P "$JOBS" bash -c 'convert_one "$0"' || FAIL=1
+
+if [[ "$FAIL" -eq 1 ]]; then
+  die "Some conversions failed. Check logs above."
+fi
+
+log "INFO" "Done. WebP files written to: $OUTPUT_DIR"
+
