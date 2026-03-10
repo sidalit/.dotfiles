@@ -7,31 +7,41 @@ delete-commit() {
     __is_git_repo__ || return 1
     __check_no_args__ ${@} || return 1
 
-    local commit="${1}"
     local first_commit="$(git rev-list --max-parents=0 HEAD)"
 
-    git cat-file -e ${commit} &> /dev/null
-    if [ $? -ne 0 ]; then
-        echo "fatal: commit '${commit}' does not exist"
-        return 1
-    fi
+    # Validate all commits first
+    for commit in "${@}"; do
+        git cat-file -e ${commit} &> /dev/null
+        if [ $? -ne 0 ]; then
+            echo "fatal: commit '${commit}' does not exist"
+            return 1
+        fi
 
-    git merge-base --is-ancestor ${commit} HEAD
-    if [ $? -ne 0 ]; then
-        echo "fatal: commit '${commit}' is not in the current branch"
-        return 1
-    fi
+        git merge-base --is-ancestor ${commit} HEAD
+        if [ $? -ne 0 ]; then
+            echo "fatal: commit '${commit}' is not in the current branch"
+            return 1
+        fi
 
-    if [[ "${first_commit}" == *"${commit}"* ]]; then
-        echo "fatal: cannot delete first commit"
-        return 1
-    fi
+        if [[ "${first_commit}" == *"${commit}"* ]]; then
+            echo "fatal: cannot delete first commit"
+            return 1
+        fi
+    done
 
-    git rebase --rebase-merges --onto ${commit}^ ${commit} 1> /dev/null
-    if [ $? -ne 0 ]; then
-        echo "fatal: command failed"
-        return 1
-    fi
+    # Sort commits from newest to oldest to avoid rebase conflicts
+    local sorted_commits=($(for commit in "${@}"; do
+        echo "$(git rev-list --count ${commit}) ${commit}"
+    done | sort -rn | awk '{print $2}'))
+
+    # Delete commits one by one, newest first
+    for commit in "${sorted_commits[@]}"; do
+        git rebase --rebase-merges --onto ${commit}^ ${commit} 1> /dev/null
+        if [ $? -ne 0 ]; then
+            echo "fatal: command failed while deleting commit '${commit}'"
+            return 1
+        fi
+    done
 
     echo "success: delete-commit"
     return 0
