@@ -103,6 +103,7 @@ export FZF_DEFAULT_OPTS="                                                     \
     --color=border:${nord3},bg+:${nord1},bg:${nord0},spinner:${nord14}        \
     --color=hl:${nord14},fg:${nord3_5},header:${nord12},info:${nord3}         \
     --color=pointer:${nord11},marker:${nord8},fg+:${nord4},gutter:${nord0}    \
+    --color=preview-fg:${nord4},preview-bg:${nord0}                           \
     --color=prompt:${nord9},hl+:${nord14}"
 
 export FZF_DEFAULT_COMMAND="rg                                                \
