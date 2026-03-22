@@ -1,0 +1,553 @@
+#!/bin/bash
+
+# Usage: inspect-img <image.img> [--extract <part_num> <file_path>] [--show <part_num> <file_path>] [...]
+
+IMAGE="$1"
+shift
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+NC='\033[0m'
+
+# ── Logging setup ────────────────────────────────────────────
+LOGFILE="/tmp/inspect_img_$(date +%Y%m%d_%H%M%S)_$$.log"
+SCRIPT_STATUS=0
+
+log() {
+    echo "[$(date +%H:%M:%S)] $*" >> "$LOGFILE"
+}
+
+log_cmd() {
+    "$@" >> "$LOGFILE" 2>&1
+    return $?
+}
+
+# ── Dependency check ─────────────────────────────────────────
+check_deps() {
+    local MISSING=()
+    local PKGS=()
+
+    declare -A DEP_PKG=(
+        [fuse2fs]="fuse2fs"
+        [mtools]="mtools"
+        [fusermount]="fuse"
+        [fdisk]="fdisk"
+        [file]="file"
+        [xxd]="xxd"
+        [blkid]="util-linux"
+        [rsync]="rsync"
+    )
+
+    for BIN in "${!DEP_PKG[@]}"; do
+        if ! command -v "$BIN" &>/dev/null; then
+            MISSING+=("$BIN")
+            PKGS+=("${DEP_PKG[$BIN]}")
+        fi
+    done
+
+    if [ "${#MISSING[@]}" -gt 0 ]; then
+        echo -e "${RED}[MISSING DEPENDENCIES]${NC}"
+        for i in "${!MISSING[@]}"; do
+            echo -e "  ${YELLOW}✘ ${MISSING[$i]}${NC} → package: ${PKGS[$i]}"
+            log "Missing dependency: ${MISSING[$i]} (package: ${PKGS[$i]})"
+        done
+        echo ""
+        UNIQUE_PKGS=($(echo "${PKGS[@]}" | tr ' ' '\n' | sort -u))
+        echo -e "Install with:"
+        echo -e "  ${CYAN}sudo apt install ${UNIQUE_PKGS[*]}${NC}"
+        SCRIPT_STATUS=1
+        exit 1
+    fi
+}
+
+check_deps
+
+# ── Usage ────────────────────────────────────────────────────
+if [ -z "$IMAGE" ] || [ ! -f "$IMAGE" ]; then
+    echo "Usage: $0 <image.img> [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  --show    <part_num> <path>   Print file or list directory"
+    echo "  --extract <part_num> <path>   Extract file to ./extracted/"
+    echo "  --extract <part_num>          Extract entire partition to ./extracted/<label>/"
+    echo ""
+    echo "Examples:"
+    echo "  $0 disk.img"
+    echo "  $0 disk.img --show 2 /etc/passwd"
+    echo "  $0 disk.img --show 1 /"
+    echo "  $0 disk.img --extract 1 /fitImage"
+    echo "  $0 disk.img --extract 2              # whole partition"
+    echo "  $0 disk.img --extract 1 /fitImage --show 2 /etc/fstab"
+    SCRIPT_STATUS=1
+    exit 1
+fi
+
+# ── Log invocation ───────────────────────────────────────────
+log "========================================"
+log "inspect-img started"
+log "Image : $IMAGE"
+log "Args  : $*"
+log "User  : $(whoami)"
+log "Host  : $(hostname)"
+log "========================================"
+
+# ── Parse arguments ──────────────────────────────────────────
+# Action format:
+#   "show:PNUM:FPATH"
+#   "extract:PNUM:FPATH"
+#   "extract_all:PNUM"
+ACTIONS=()
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --show)
+            if [ -z "$2" ] || [ -z "$3" ]; then
+                echo -e "${RED}Error: --show requires <part_num> <file_path>${NC}"
+                SCRIPT_STATUS=1; exit 1
+            fi
+            ACTIONS+=("show:$2:$3")
+            log "Action queued: show | part=$2 | path=$3"
+            shift 3
+            ;;
+        --extract)
+            if [ -z "$2" ]; then
+                echo -e "${RED}Error: --extract requires at least <part_num>${NC}"
+                SCRIPT_STATUS=1; exit 1
+            fi
+            # Check if next arg is a path or another flag or empty
+            if [ -z "$3" ] || [[ "$3" == --* ]]; then
+                ACTIONS+=("extract_all:$2")
+                log "Action queued: extract_all | part=$2"
+                shift 2
+            else
+                ACTIONS+=("extract:$2:$3")
+                log "Action queued: extract | part=$2 | path=$3"
+                shift 3
+            fi
+            ;;
+        *)
+            echo -e "${RED}Unknown option: $1${NC}"
+            log "ERROR: Unknown option: $1"
+            SCRIPT_STATUS=1; exit 1
+            ;;
+    esac
+done
+
+# ── Parse partition table ────────────────────────────────────
+declare -A PART_START
+declare -A PART_FSTYPE
+declare -A PART_LABEL
+declare -A PART_UUID
+declare -A PART_MNT
+declare -A PART_MOUNTED
+
+IDX=0
+while IFS= read -r LINE; do
+    [[ "$LINE" =~ ^[^0-9]*([0-9]+)[[:space:]]+\*?[[:space:]]*([0-9]+) ]] || continue
+    IDX=$((IDX + 1))
+    PART_START[$IDX]="${BASH_REMATCH[2]}"
+    log "Partition $IDX detected | start sector: ${BASH_REMATCH[2]}"
+done < <(fdisk -l "$IMAGE" 2>/dev/null | grep -E "^${IMAGE}[0-9]")
+
+# Fallback: parted
+if [ "$IDX" -eq 0 ]; then
+    log "fdisk found no partitions, trying parted..."
+    while IFS= read -r LINE; do
+        [[ "$LINE" =~ ^[[:space:]]*([0-9]+)[[:space:]]+([0-9]+)s ]] || continue
+        IDX=$((IDX + 1))
+        PART_START[$IDX]="${BASH_REMATCH[2]}"
+        log "Partition $IDX detected via parted | start sector: ${BASH_REMATCH[2]}"
+    done < <(parted -s "$IMAGE" unit s print 2>/dev/null)
+fi
+
+if [ "$IDX" -eq 0 ]; then
+    echo -e "${RED}No partitions found in $IMAGE${NC}"
+    log "ERROR: No partitions found in $IMAGE"
+    SCRIPT_STATUS=1; exit 1
+fi
+
+log "Total partitions found: $IDX"
+
+# ── Temp dir & cleanup ───────────────────────────────────────
+TMPDIR_BASE="/tmp/inspect_img_$$"
+mkdir -p "$TMPDIR_BASE"
+
+cleanup() {
+    for i in $(seq 1 $IDX); do
+        if [ "${PART_MOUNTED[$i]}" = "1" ]; then
+            log "Unmounting partition $i: ${PART_MNT[$i]}"
+            fusermount -u "${PART_MNT[$i]}" 2>/dev/null
+        fi
+    done
+    rm -rf "$TMPDIR_BASE"
+
+    if [ "$SCRIPT_STATUS" -eq 0 ]; then
+        log "Script completed successfully — removing log"
+        rm -f "$LOGFILE"
+    else
+        log "Script failed — log kept at: $LOGFILE"
+        echo -e "\n${RED}[LOG]${NC} Failure log saved at: ${YELLOW}$LOGFILE${NC}" >&2
+    fi
+}
+trap cleanup EXIT
+
+# ── Get partition metadata ───────────────────────────────────
+get_meta() {
+    local PNUM="$1"
+    local OFFSET=$(( PART_START[$PNUM] * 512 ))
+    PART_LABEL[$PNUM]=$(blkid -o value -s LABEL -p -O "$OFFSET" "$IMAGE" 2>/dev/null)
+    PART_UUID[$PNUM]=$(blkid  -o value -s UUID  -p -O "$OFFSET" "$IMAGE" 2>/dev/null)
+    PART_FSTYPE[$PNUM]=$(blkid -o value -s TYPE  -p -O "$OFFSET" "$IMAGE" 2>/dev/null)
+    log "Partition $PNUM meta | FS: ${PART_FSTYPE[$PNUM]} | Label: ${PART_LABEL[$PNUM]} | UUID: ${PART_UUID[$PNUM]}"
+}
+
+# ── Mount partition ──────────────────────────────────────────
+mount_partition() {
+    local PNUM="$1"
+    local OFFSET=$(( PART_START[$PNUM] * 512 ))
+    local MNT="$TMPDIR_BASE/part${PNUM}"
+    local FS="${PART_FSTYPE[$PNUM]}"
+
+    mkdir -p "$MNT"
+    PART_MNT[$PNUM]="$MNT"
+
+    log "Mounting partition $PNUM | FS: $FS | offset: $OFFSET"
+
+    if [[ "$FS" == "vfat" || "$FS" == fat* ]]; then
+        log "Partition $PNUM → vfat, using mtools"
+        PART_MOUNTED[$PNUM]="vfat"
+        return 0
+    fi
+
+    if log_cmd fuse2fs -o ro,fakeroot,offset=$OFFSET "$IMAGE" "$MNT"; then
+        log "Partition $PNUM mounted successfully → $MNT"
+        PART_MOUNTED[$PNUM]="1"
+        return 0
+    fi
+
+    log "ERROR: fuse2fs failed for partition $PNUM (FS: $FS, offset: $OFFSET)"
+    PART_MOUNTED[$PNUM]="0"
+    SCRIPT_STATUS=1
+    return 1
+}
+
+# ── Resolve output directory for a partition ─────────────────
+get_dest_dir() {
+    local PNUM="$1"
+    local LABEL="${PART_LABEL[$PNUM]}"
+    if [ -n "$LABEL" ]; then
+        echo "./extracted/${LABEL}"
+    else
+        echo "./extracted/partition${PNUM}"
+    fi
+}
+
+# ── Extract entire partition ─────────────────────────────────
+extract_all() {
+    local PNUM="$1"
+    local DEST
+    DEST=$(get_dest_dir "$PNUM")
+    local FS="${PART_FSTYPE[$PNUM]}"
+    local OFFSET=$(( PART_START[$PNUM] * 512 ))
+
+    mkdir -p "$DEST"
+    log "Extracting entire partition $PNUM → $DEST"
+    echo -e "  ${CYAN}Destination:${NC} $DEST"
+
+    case "${PART_MOUNTED[$PNUM]}" in
+
+        1)  # ext — rsync from fuse mount (fast, preserves structure)
+            echo -e "  ${CYAN}Method:${NC} rsync from fuse2fs mount"
+            local MNT="${PART_MNT[$PNUM]}"
+            local START_TIME=$SECONDS
+
+            rsync -a --info=progress2 "$MNT/" "$DEST/"
+
+            local ELAPSED=$(( SECONDS - START_TIME ))
+            local COUNT=$(find "$DEST" | wc -l)
+            log "rsync done | files: $COUNT | time: ${ELAPSED}s"
+            echo -e "  ${GREEN}✔ Done${NC} — $COUNT items in ${ELAPSED}s"
+            ;;
+
+        vfat)  # vfat — mcopy recursive
+            echo -e "  ${CYAN}Method:${NC} mcopy recursive"
+            local START_TIME=$SECONDS
+
+            mcopy -s -i "${IMAGE}@@${OFFSET}" "::/*" "$DEST/" >> "$LOGFILE" 2>&1
+            # mcopy doesn't always handle ::/* well, fallback with mtools loop
+            if [ $? -ne 0 ]; then
+                log "mcopy recursive failed, trying mtools loop..."
+                # List root entries and copy each
+                mdir -i "${IMAGE}@@${OFFSET}" :: 2>/dev/null | \
+                    awk '/^[ ]+[^ ]/{print $NF}' | \
+                    while read -r ENTRY; do
+                        mcopy -s -i "${IMAGE}@@${OFFSET}" "::/${ENTRY}" "$DEST/" >> "$LOGFILE" 2>&1
+                    done
+            fi
+
+            local ELAPSED=$(( SECONDS - START_TIME ))
+            local COUNT=$(find "$DEST" | wc -l)
+            log "mcopy done | files: $COUNT | time: ${ELAPSED}s"
+            echo -e "  ${GREEN}✔ Done${NC} — $COUNT items in ${ELAPSED}s"
+            ;;
+
+        *)
+            log "ERROR: Partition $PNUM not mounted for extract_all"
+            echo -e "  ${RED}✘ Partition $PNUM not mounted${NC}"
+            SCRIPT_STATUS=1
+            return 1
+            ;;
+    esac
+
+    echo -e "\n  ${GREEN}[Content of $DEST]${NC}"
+    ls -lh "$DEST" | sed 's/^/  /'
+}
+
+# ── vfat single file/dir operation ──────────────────────────
+do_vfat_op() {
+    local MODE="$1"
+    local PNUM="$2"
+    local FPATH="$3"
+    local FNAME=$(basename "$FPATH")
+    local OFFSET=$(( PART_START[$PNUM] * 512 ))
+    local IMG_REF="${IMAGE}@@${OFFSET}"
+    local TMP="$TMPDIR_BASE/vfat_${FNAME}"
+
+    FPATH="/$(echo "$FPATH" | sed 's|^/||;s|/$||')"
+    log "do_vfat_op | mode=$MODE | part=$PNUM | path=$FPATH"
+
+    mcopy -i "$IMG_REF" "::${FPATH}" "$TMP" >> "$LOGFILE" 2>&1
+
+    if [ ! -s "$TMP" ]; then
+        local DIR_CONTENT
+        DIR_CONTENT=$(mdir -i "$IMG_REF" "::${FPATH}" 2>>"$LOGFILE")
+        if [ -n "$DIR_CONTENT" ]; then
+            log "Path is a directory → listing: $FPATH"
+            echo -e "  ${CYAN}(directory)${NC} → $FPATH"
+            echo ""
+            echo "$DIR_CONTENT" | sed 's/^/  /'
+        else
+            log "ERROR: Not found in vfat: $FPATH"
+            echo -e "  ${RED}✘ Not found: $FPATH${NC}"
+            SCRIPT_STATUS=1
+        fi
+        rm -f "$TMP"
+        return 0
+    fi
+
+    local FTYPE
+    FTYPE=$(file -b "$TMP")
+    log "File found in vfat: $FPATH | type: $FTYPE"
+    echo "  Type : $FTYPE"
+
+    if [ "$MODE" = "extract" ]; then
+        mkdir -p ./extracted
+        cp "$TMP" "./extracted/${FNAME}"
+        log "Extracted: $FPATH → ./extracted/${FNAME}"
+        echo -e "  ${GREEN}✔ Saved: ./extracted/${FNAME}${NC}"
+    fi
+
+    if file "$TMP" | grep -qE "text|ASCII|UTF|script|source"; then
+        echo ""
+        cat "$TMP" | sed 's/^/  │ /'
+    else
+        echo -e "  ${CYAN}(binary)${NC} — hex preview:"
+        xxd "$TMP" | head -8 | sed 's/^/  /'
+    fi
+
+    rm -f "$TMP"
+}
+
+# ── ext single file/dir operation ───────────────────────────
+do_ext_op() {
+    local MODE="$1"
+    local PNUM="$2"
+    local FPATH="$3"
+    local FNAME=$(basename "$FPATH")
+    local MNT="${PART_MNT[$PNUM]}"
+    local FULL="${MNT}${FPATH}"
+
+    log "do_ext_op | mode=$MODE | part=$PNUM | path=$FPATH"
+
+    if [ ! -e "$FULL" ]; then
+        log "ERROR: Not found: $FULL"
+        echo -e "  ${RED}✘ Not found: $FPATH${NC}"
+        SCRIPT_STATUS=1
+        return 1
+    fi
+
+    if [ -d "$FULL" ]; then
+        log "Path is a directory → listing: $FPATH"
+        echo -e "  ${CYAN}(directory)${NC} → $FPATH"
+        echo ""
+        ls -la "$FULL" | sed 's/^/  /'
+        return 0
+    fi
+
+    local FTYPE
+    FTYPE=$(file -b "$FULL")
+    log "File found: $FULL | type: $FTYPE"
+    echo "  Type : $FTYPE"
+
+    if [ "$MODE" = "extract" ]; then
+        mkdir -p ./extracted
+        cp "$FULL" "./extracted/${FNAME}"
+        log "Extracted: $FULL → ./extracted/${FNAME}"
+        echo -e "  ${GREEN}✔ Saved: ./extracted/${FNAME}${NC}"
+    fi
+
+    if file "$FULL" | grep -qE "text|ASCII|UTF|script|source"; then
+        echo ""
+        cat "$FULL" | sed 's/^/  │ /'
+    else
+        echo -e "  ${CYAN}(binary)${NC} — hex preview:"
+        xxd "$FULL" | head -8 | sed 's/^/  /'
+    fi
+}
+
+# ── Unified dispatcher ───────────────────────────────────────
+do_file_op() {
+    local MODE="$1"
+    local PNUM="$2"
+    local FPATH="$3"
+
+    case "${PART_MOUNTED[$PNUM]}" in
+        vfat) do_vfat_op "$MODE" "$PNUM" "$FPATH" ;;
+        1)    do_ext_op  "$MODE" "$PNUM" "$FPATH" ;;
+        *)
+            log "ERROR: Partition $PNUM not mounted"
+            echo -e "  ${RED}✘ Partition $PNUM not mounted${NC}"
+            SCRIPT_STATUS=1
+            return 1
+            ;;
+    esac
+}
+
+# ════════════════════════════════════════════════════════════
+# ACTION MODE  (--show / --extract / --extract whole)
+# ════════════════════════════════════════════════════════════
+if [ "${#ACTIONS[@]}" -gt 0 ]; then
+
+    declare -A NEEDED
+    for ENTRY in "${ACTIONS[@]}"; do
+        PNUM=$(echo "$ENTRY" | cut -d: -f2)
+        NEEDED[$PNUM]=1
+    done
+
+    echo -e "${BLUE}[MOUNTING PARTITIONS]${NC}"
+    for PNUM in "${!NEEDED[@]}"; do
+        if [ -z "${PART_START[$PNUM]}" ]; then
+            echo -e "  ${RED}✘ Partition $PNUM not found in image${NC}"
+            log "ERROR: Partition $PNUM not found in image"
+            SCRIPT_STATUS=1
+            continue
+        fi
+        get_meta "$PNUM"
+        if mount_partition "$PNUM"; then
+            [ "${PART_MOUNTED[$PNUM]}" = "vfat" ] && METHOD="mtools" || METHOD="fuse2fs"
+            echo -e "  ${GREEN}✔ Partition $PNUM${NC} (${PART_FSTYPE[$PNUM]}) — ${PART_LABEL[$PNUM]:-no label} [$METHOD]"
+        else
+            echo -e "  ${RED}✘ Partition $PNUM — could not mount (${PART_FSTYPE[$PNUM]:-unknown})${NC}"
+        fi
+    done
+
+    for ENTRY in "${ACTIONS[@]}"; do
+        TYPE="${ENTRY%%:*}"
+        REST="${ENTRY#*:}"
+        PNUM="${REST%%:*}"
+        FPATH="${REST#*:}"
+
+        case "$TYPE" in
+            extract_all)
+                echo -e "\n${MAGENTA}[EXTRACT ALL]${NC} Partition $PNUM"
+                echo "  FS Type : ${PART_FSTYPE[$PNUM]:-unknown}"
+                echo "  Label   : ${PART_LABEL[$PNUM]:-none}"
+                extract_all "$PNUM"
+                ;;
+            extract|show)
+                echo -e "\n${MAGENTA}[$(echo "$TYPE" | tr '[:lower:]' '[:upper:]')]${NC} Partition $PNUM → $FPATH"
+                echo "  FS Type : ${PART_FSTYPE[$PNUM]:-unknown}"
+                do_file_op "$TYPE" "$PNUM" "$FPATH"
+                ;;
+        esac
+    done
+
+    if [ -d ./extracted ] && ls ./extracted/* &>/dev/null; then
+        echo -e "\n${CYAN}Extracted files in ./extracted/${NC}"
+        ls -lh ./extracted/ | sed 's/^/  /'
+    fi
+    exit 0
+fi
+
+# ════════════════════════════════════════════════════════════
+# INSPECT MODE — full scan
+# ════════════════════════════════════════════════════════════
+log "Running in INSPECT mode"
+
+echo -e "${CYAN}========================================${NC}"
+echo -e "${CYAN}  Image Inspector: $(basename "$IMAGE")${NC}"
+echo -e "${CYAN}========================================${NC}"
+
+echo -e "\n${BLUE}[IMAGE INFO]${NC}"
+echo "  File : $IMAGE"
+echo "  Size : $(du -h "$IMAGE" | cut -f1)"
+echo "  Type : $(file -b "$IMAGE")"
+
+echo -e "\n${BLUE}[PARTITION TABLE]${NC}"
+fdisk -l "$IMAGE" 2>/dev/null | \
+    grep -E "Device|Disk identifier|img[0-9]|\.img[0-9]" | sed 's/^/  /'
+
+echo -e "\n${BLUE}[MOUNTING PARTITIONS]${NC}"
+for i in $(seq 1 $IDX); do
+    get_meta "$i"
+    if mount_partition "$i"; then
+        [ "${PART_MOUNTED[$i]}" = "vfat" ] && METHOD="mtools" || METHOD="fuse2fs"
+        echo -e "  ${GREEN}✔ Partition $i${NC} — FS: ${PART_FSTYPE[$i]} | Label: ${PART_LABEL[$i]:-none} | Method: $METHOD"
+    else
+        echo -e "  ${RED}✘ Partition $i${NC} — unsupported (${PART_FSTYPE[$i]:-unknown})"
+    fi
+done
+
+for i in $(seq 1 $IDX); do
+    echo -e "\n${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}  Partition $i${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo "  FS Type : ${PART_FSTYPE[$i]:-unknown}"
+    echo "  Label   : ${PART_LABEL[$i]:-none}"
+    echo "  UUID    : ${PART_UUID[$i]:-none}"
+
+    OFFSET_INSPECT=$(( PART_START[$i] * 512 ))
+
+    case "${PART_MOUNTED[$i]}" in
+        vfat)
+            echo "  Method  : mtools"
+            echo -e "\n  ${GREEN}[/ content]${NC}"
+            mdir -i "${IMAGE}@@${OFFSET_INSPECT}" :: 2>/dev/null | sed 's/^/  /'
+            ;;
+        1)
+            MNT="${PART_MNT[$i]}"
+            echo "  Method  : fuse2fs"
+            echo "  Size    : $(df -h "$MNT" 2>/dev/null | awk 'NR==2{print $2}')"
+            echo -e "\n  ${GREEN}[/ content]${NC}"
+            ls -la "$MNT" 2>/dev/null | sed 's/^/  /'
+            for F in /etc/fstab /etc/os-release /etc/hostname; do
+                [ -f "${MNT}${F}" ] || continue
+                echo -e "\n  ${GREEN}[$F]${NC}"
+                cat "${MNT}${F}" | sed 's/^/  │ /'
+            done
+            ;;
+        *)
+            echo -e "  ${RED}(not mounted — skipping)${NC}"
+            ;;
+    esac
+done
+
+echo -e "\n${CYAN}========================================${NC}"
+echo -e "${CYAN}  Done — $IDX partition(s) inspected${NC}"
+echo -e "${CYAN}========================================${NC}"
+
+log "Inspect mode completed"
