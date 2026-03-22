@@ -31,10 +31,7 @@
 [include]
     path = ~/.gitalias
 
-[includeIf "gitdir:~/devel/"]
-    path = ~/.gitconfig.personal
-
-[includeIf "gitdir:~/.dotfiles/"]
+[includeIf "gitdir:~/"]
     path = ~/.gitconfig.personal
 
 [includeIf "gitdir:~/project/canonical/"]
@@ -124,6 +121,7 @@
 
 [merge]
     conflictstyle = diff3
+    tool = meld
 
 [diff]
     tool = vimdiff
@@ -131,9 +129,6 @@
 
 [difftool]
     prompt = false
-
-[format]
-    signoff = true
 
 [help]
     autocorrect = 0

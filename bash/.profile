@@ -34,7 +34,7 @@ nord15="#B48EAD"
 export GCC_COLORS="error=31:warning=38;5;208:note=34:caret=32:locus=37:quote=36"
 
 # GTK theming to fix libadwaita
-export GTK_THEME=Qogir-Dark
+# export GTK_THEME=Qogir-Dark
 
 # xdg config
 export XDG_CONFIG_HOME="${HOME}/.config"
@@ -100,6 +100,7 @@ export FZF_DEFAULT_OPTS="                                                     \
     --no-bold --no-mouse --height 70% --reverse --border=sharp --no-separator \
     --tiebreak=index --bind \"change:top\" --scheme=history                   \
     --preview-window=sharp --margin=0                                         \
+    --bind \"ctrl-up:preview-up,ctrl-down:preview-down\"                      \
     --color=border:${nord3},bg+:${nord1},bg:${nord0},spinner:${nord14}        \
     --color=hl:${nord14},fg:${nord3_5},header:${nord12},info:${nord3}         \
     --color=pointer:${nord11},marker:${nord8},fg+:${nord4},gutter:${nord0}    \
