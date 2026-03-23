@@ -1,13 +1,13 @@
 % packages, debian/ubuntu
 
 # list installed packages
-apt list
+dpkg-query -W -f='${binary:Package}\t${Version}\n'
 
 # find which package contains a file
-sudo apt update && dpkg -S <file>
+dpkg -S <file>
 
 # list files installed by a package [local]
-sudo apt update && dpkg -L <installed_package>
+dpkg -L <installed_package>
 
 # list files installed by a package [online]
 sudo apt-file update && apt-file list <online_package>
@@ -18,8 +18,26 @@ sudo apt install <online_package>
 # list info on package
 apt show <installed_package>
 
-# remove package
+# remove package with config
 sudo apt remove --purge <installed_package>
 
-$ installed_package: dpkg-query -W -f='${binary:Package}\n'
-$ online_package: apt list
+# update package index
+sudo apt update
+
+# upgrade all packages
+sudo apt upgrade
+
+# full dist-upgrade
+sudo apt dist-upgrade
+
+# autoremove unused packages
+sudo apt autoremove --purge
+
+# clean package cache
+sudo apt clean
+
+# search for a package
+apt search <search_term>
+
+$ installed_package: dpkg-query -W -f='${binary:Package}\n' --- --preview "apt show {}"
+$ online_package: apt list --quiet 2>/dev/null | cut -d/ -f1

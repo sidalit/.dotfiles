@@ -1,0 +1,65 @@
+% snap
+
+# list installed snaps
+snap list
+
+# show snap info
+snap info <installed_snap>
+
+# show recent snap changes
+snap changes
+
+# install a snap
+sudo snap install <snap_name>
+
+# remove a snap
+sudo snap remove <installed_snap>
+
+# refresh a snap
+sudo snap refresh <installed_snap>
+
+# login to snap store
+snap login
+
+$ installed_snap: snap list --color=never | tail -n +2 | awk '{print $1}'
+
+% snap, model
+
+# sign a model assertion
+snap sign -k <sign_key> <model_json> > <model_json>.model
+
+# list snapcraft keys
+snapcraft list-keys
+
+$ sign_key: snapcraft list-keys 2>/dev/null | tail -n +2 | awk '{print $1}'
+$ model_json: fd -e json --type f --max-depth 2
+
+% snapcraft
+
+# build snap in current directory
+snapcraft
+
+# build snap with LXD for a target architecture
+snapcraft --use-lxd --build-for <snap_arch> -v
+
+# pack a snap from prime directory
+snapcraft pack
+
+# clean snapcraft build
+snapcraft clean
+
+# list validation sets
+snapcraft list-validation-sets
+
+$ snap_arch: echo -e "amd64\narm64\narmhf" --- --prevent-extra
+
+% ubuntu-image
+
+# build Ubuntu Core image from model
+ubuntu-image snap <model_file>
+
+# build Ubuntu Core image with custom gadget snap
+ubuntu-image snap --allow-snapd-kernel-mismatch --snap <gadget_snap> <model_file>
+
+$ model_file: fd -e model --type f --max-depth 2
+$ gadget_snap: fd -e snap --type f --max-depth 3

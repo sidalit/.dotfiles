@@ -1,0 +1,44 @@
+% kernel, build
+
+# apply a defconfig
+make <defconfig>
+
+# build kernel image + devicetrees + modules
+make -j$(nproc) Image.gz dtbs modules
+
+# install modules to a directory
+make -j$(nproc) modules_install INSTALL_MOD_PATH=<install_path>
+
+# install devicetree blobs to a directory
+make -j$(nproc) dtbs_install INSTALL_DTBS_PATH=<install_path>
+
+# clean build artifacts
+make mrproper
+
+# edit kernel config interactively
+make menuconfig
+
+$ defconfig: ls arch/arm64/configs/ 2>/dev/null || ls arch/arm/configs/ 2>/dev/null --- --prevent-extra
+$ install_path: echo -e "./output\n/mnt\n/mnt/usr"
+
+% kernel, debian
+
+# build debian packages from kernel source
+fakeroot debian/rules clean && fakeroot debian/rules binary
+
+# setup cross-compile environment for arm64
+export $(dpkg-architecture -aarm64)
+
+% kernel, devicetree
+
+# decompile a DTB to DTS
+dtc -I dtb -O dts -o <output_name>.dts <dtb_file>
+
+# compile a DTS to DTB
+dtc -I dts -O dtb -o <output_name>.dtb <dts_file>
+
+# read a DTB (pretty print)
+dtc -I dtb -O dts <dtb_file> | less
+
+$ dtb_file: fd -e dtb --type f
+$ dts_file: fd -e dts --type f

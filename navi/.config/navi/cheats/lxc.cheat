@@ -1,0 +1,153 @@
+% lxc, container
+
+# list containers
+lxc list
+
+# launch a new container
+lxc launch <lxc_image> <container_name>
+
+# launch a container with specific architecture
+lxc launch <lxc_image>/<lxc_arch> <container_name>
+
+# start a stopped container
+lxc start <stopped_container>
+
+# stop a running container
+lxc stop <running_container>
+
+# restart a container
+lxc restart <running_container>
+
+# delete a container
+lxc delete <stopped_container>
+
+# force delete a container
+lxc delete --force <lxc_container>
+
+# open a shell in container
+lxc shell <running_container>
+
+# execute a command in container
+lxc exec <running_container> -- <cmd>
+
+# show container info
+lxc info <lxc_container>
+
+# show container config
+lxc config show <lxc_container>
+
+# edit container config
+lxc config edit <lxc_container>
+
+# set container CPU limit
+lxc config set <lxc_container> limits.cpu <cpu_limit>
+
+# set container memory limit
+lxc config set <lxc_container> limits.memory <mem_limit>
+
+$ lxc_image: echo -e "ubuntu:24.04\nubuntu:22.04\nubuntu:20.04\nimages:debian/12\nimages:fedora/40\nimages:alpine/3.20"
+$ lxc_arch: echo -e "amd64\narm64\narmhf" --- --prevent-extra
+$ lxc_container: lxc list --format csv -c n 2>/dev/null
+$ running_container: lxc list --format csv -c n status=running 2>/dev/null
+$ stopped_container: lxc list --format csv -c n status=stopped 2>/dev/null
+$ cpu_limit: echo -e "1\n2\n4\n8"
+$ mem_limit: echo -e "512MiB\n1GiB\n2GiB\n4GiB\n8GiB"
+
+% lxc, image
+
+# list cached images
+lxc image list
+
+# list remote images (filter by OS and arch)
+lxc image list <lxc_remote> <image_filter> <lxc_arch>
+
+# show image info
+lxc image info <local_image>
+
+# delete a cached image
+lxc image delete <local_image>
+
+# copy an image from remote
+lxc image copy <lxc_remote>:<image_filter> local: --alias <alias_name>
+
+# export image to a file
+lxc image export <local_image> .
+
+$ lxc_remote: echo -e "ubuntu:\nimages:" --- --prevent-extra
+$ image_filter: echo -e "24.04\n22.04\n20.04\ndebian\nalpine"
+$ local_image: lxc image list --format csv -c lf 2>/dev/null --- --column 1
+
+% lxc, file
+
+# push a file into container
+lxc file push <local_file> <running_container>/<remote_path>
+
+# pull a file from container
+lxc file pull <running_container>/<remote_path> .
+
+# mount container filesystem (requires FUSE)
+lxc file mount <running_container>/ <mount_dir>
+
+$ local_file: fd --type f --max-depth 2
+$ mount_dir: echo -e "/tmp/lxc-mount\n./mnt"
+
+% lxc, profile
+
+# list profiles
+lxc profile list
+
+# show a profile
+lxc profile show <lxc_profile>
+
+# edit a profile
+lxc profile edit <lxc_profile>
+
+# create a new profile
+lxc profile create <profile_name>
+
+# apply profile to container
+lxc profile add <lxc_container> <lxc_profile>
+
+$ lxc_profile: lxc profile list --format csv 2>/dev/null | cut -d, -f1
+
+% lxc, network
+
+# list networks
+lxc network list
+
+# show network info
+lxc network show <lxc_network>
+
+# attach network to container
+lxc network attach <lxc_network> <lxc_container>
+
+$ lxc_network: lxc network list --format csv 2>/dev/null | cut -d, -f1
+
+% lxc, storage
+
+# list storage pools
+lxc storage list
+
+# show storage pool info
+lxc storage show <storage_pool>
+
+# list volumes in pool
+lxc storage volume list <storage_pool>
+
+$ storage_pool: lxc storage list --format csv 2>/dev/null | cut -d, -f1
+
+% lxc, snapshot
+
+# create container snapshot
+lxc snapshot <lxc_container> <snapshot_name>
+
+# restore container snapshot
+lxc restore <lxc_container> <container_snapshot>
+
+# delete container snapshot
+lxc delete <lxc_container>/<container_snapshot>
+
+# list snapshots
+lxc info <lxc_container> | grep -A 100 'Snapshots:'
+
+$ container_snapshot: lxc info <lxc_container> 2>/dev/null | grep -A 50 'Snapshots:' | tail -n +2 | awk '{print $1}' | grep -v '^$'

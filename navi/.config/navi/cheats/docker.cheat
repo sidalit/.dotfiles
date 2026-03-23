@@ -36,6 +36,25 @@ docker logs --tail 100 <container_id> -f
 # create new network
 docker network create <network_name>
 
-$ image_id: docker images --- --headers 1 --column 3
-$ container_id: docker ps --- --headers 1 --column 1
+% docker, build
 
+# build image with current user UID/GID
+docker build --build-arg UID="$(id -u)" --build-arg GID="$(id -g)" -t <image_tag> .
+
+# build image from a specific Dockerfile
+docker build --build-arg UID="$(id -u)" --build-arg GID="$(id -g)" -t <image_tag> -f <dockerfile> .
+
+% docker, run
+
+# run interactive container with project + git + ssh mounts
+docker run --rm -it \
+   -v "$PWD/<project_dir>:/home/user/projects" \
+   -v "$PWD/gitconfig:/home/user/.gitconfig:ro" \
+   -v "$HOME/.ssh:/home/user/.ssh:ro" \
+   <local_image>
+
+$ image_id: docker images --- --header-lines 1 --column 3
+$ container_id: docker ps --- --header-lines 1 --column 1
+$ local_image: docker images --format '{{.Repository}}:{{.Tag}}' | grep -v '<none>'
+$ dockerfile: fd -t f -g 'Dockerfile*'
+$ project_dir: fd --type d --max-depth 1

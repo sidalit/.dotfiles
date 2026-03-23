@@ -6,5 +6,15 @@ zip <name>.zip <files>
 # create a zip containing folder
 zip -r <folder>.zip <folder>
 
-$ files: command fd --type f --hidden --max-depth 1
-$ folder: command fd --type d --hidden --max-depth 1
+# extract a tar.xz archive
+tar xf <tar_file>
+
+# extract a tar.gz archive
+tar xzf <tar_file>
+
+# create tar.xz from directory
+tar cJf <folder>.tar.xz <folder>
+
+$ files: fd --type f --hidden --max-depth 1 --- --multi --expand
+$ folder: fd --type d --hidden --max-depth 1
+$ tar_file: fd -e tar.xz -e tar.gz -e tar.bz2 -e tgz -e txz --type f

@@ -9,3 +9,28 @@ systemctl list-unit-files -t service --state=enabled
 # list disabled services
 systemctl list-unit-files -t service --state=disabled
 
+# show service status
+systemctl status <running_service>
+
+# restart a service
+sudo systemctl restart <running_service>
+
+# stop a service
+sudo systemctl stop <running_service>
+
+# start a service
+sudo systemctl start <stopped_service>
+
+# enable a service
+sudo systemctl enable <disabled_service>
+
+# disable a service
+sudo systemctl disable <enabled_service>
+
+# reload systemd daemon
+systemctl daemon-reload
+
+$ running_service: systemctl list-units -t service --state=running --no-legend | awk '{print $1}'
+$ stopped_service: systemctl list-units -t service --state=inactive --no-legend | awk '{print $1}'
+$ enabled_service: systemctl list-unit-files -t service --state=enabled --no-legend | awk '{print $1}'
+$ disabled_service: systemctl list-unit-files -t service --state=disabled --no-legend | awk '{print $1}'

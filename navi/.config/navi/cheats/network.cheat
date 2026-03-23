@@ -7,13 +7,47 @@ echo <public_ip>
 echo <local_ip>
 
 # find local IP addresses in local network
-sudo nmap -sn <local_ip>
+sudo nmap -sn <subnet>/24
 
-# find location base on IP
+# find location based on IP
 curl -s ipinfo.io/<public_ip> | jq .
 
 # connect to wifi using NetworkManager
 nmcli device wifi connect <ssid> password <password>
 
+# list wifi networks
+nmcli device wifi list
+
 $ public_ip: curl -s ifconfig.me
 $ local_ip: ip route get 8.8.8.8 | head -1 | awk '{print $7}'
+$ subnet: ip route | grep -v default | awk '{print $1}' | sed 's|/.*||'
+
+% network, wireguard
+
+# bring up WireGuard tunnel
+sudo wg-quick up <wg_interface>
+
+# bring down WireGuard tunnel
+sudo wg-quick down <wg_interface>
+
+# restart WireGuard tunnel
+sudo wg-quick down <wg_interface>; sudo wg-quick up <wg_interface>
+
+# show WireGuard status
+sudo wg show
+
+$ wg_interface: ls /etc/wireguard/*.conf 2>/dev/null | xargs -I{} basename {} .conf
+
+% network, ssh
+
+# SSH to a host
+ssh <ssh_host>
+
+# SCP file to remote host
+scp <local_file> <ssh_host>:<remote_path>
+
+# SCP file from remote host
+scp <ssh_host>:<remote_path> <local_file>
+
+$ ssh_host: grep -E '^Host\s' ~/.ssh/config 2>/dev/null | awk '{print $2}' | grep -v '\*'
+$ local_file: fd --type f --max-depth 2

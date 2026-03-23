@@ -1,6 +1,51 @@
-% commands
+% commands, mount
 
 # mount Windows NTFS partition
 sudo mount -t ntfs-3g -o uid=1000,gid=1000,dmask=002,fmask=111 <partition> /mnt
 
-$ partition: lsblk -p -r -n -o NAME
+# mount a block device partition
+sudo mount <partition> <mount_point>
+
+# bind mount
+sudo mount -o bind <source_dir> <mount_point>
+
+# unmount a mount point
+sudo umount <mounted>
+
+# safely eject a device
+sudo eject <block_device>
+
+$ partition: lsblk -p -r -n -o NAME,SIZE,TYPE,MOUNTPOINT | grep 'part' --- --column 1 --preview "lsblk -f {1}"
+$ block_device: lsblk -p -d -n -o NAME,SIZE,MODEL --- --column 1
+$ mount_point: echo -e "/mnt\n/mnt/boot\n/mnt/root"
+$ mounted: mount | grep '^/dev' | awk '{print $3}'
+$ source_dir: fd --type d --max-depth 2
+
+% commands, losetup
+
+# attach disk image as loop device
+sudo losetup --find --partscan --show <img_file>
+
+# detach loop device
+sudo losetup -d <loop_device>
+
+# list active loop devices
+losetup -l
+
+# mount a partition from a loop device
+sudo mount <loop_partition> /mnt
+
+$ img_file: fd -e img -e raw --type f --- --preview "file {}"
+$ loop_device: losetup -l -n -O NAME 2>/dev/null
+$ loop_partition: lsblk -p -r -n -o NAME | grep loop --- --column 1
+
+% commands, squashfs
+
+# extract a squashfs / snap file
+unsquashfs <squashfs_file>
+
+# create squashfs from directory
+mksquashfs <source_dir> <output_name>.squashfs -comp xz
+
+$ squashfs_file: fd -e snap -e squashfs -e img --type f
+$ source_dir: fd --type d --max-depth 1

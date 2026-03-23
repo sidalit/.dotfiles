@@ -7,10 +7,10 @@ adb -s <device> logcat -v time
 adb -s <device> shell getprop <property>
 
 # install APK
-adb -s <device> install -r <path>
+adb -s <device> install -r <apk_file>
 
 # uninstall package
-adb -s <device> uninstall -r <package>
+adb -s <device> uninstall <package>
 
 # clear user data for package
 adb -s <device> shell pm clear <package>
@@ -18,4 +18,28 @@ adb -s <device> shell pm clear <package>
 # dispatch a deep-link / open URI
 adb -s <device> shell am start <uri>
 
-$ device: adb devices | grep -v devices | grep device | cut -f 1
+# list connected devices
+adb devices
+
+# list fastboot devices
+fastboot devices
+
+# reboot device to bootloader
+adb -s <device> reboot bootloader
+
+# reboot device to recovery
+adb -s <device> reboot recovery
+
+# push file to device
+adb -s <device> push <local_file> <remote_path>
+
+# pull file from device
+adb -s <device> pull <remote_path> .
+
+# start shell on device
+adb -s <device> shell
+
+$ device: adb devices 2>/dev/null | grep -v 'List' | grep -v '^$' | cut -f1
+$ package: adb -s <device> shell pm list packages 2>/dev/null | sed 's/package://'
+$ apk_file: fd -e apk --type f
+$ local_file: fd --type f --max-depth 2

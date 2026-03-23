@@ -10,16 +10,85 @@ git tag -af "<tag>" -m "<tag_msg>"
 git tag -f "<tag>"
 
 # delete remote tag
-git push --delete origin <remote_tags>
+git push --delete <remote> <remote_tags>
 
 # delete remote branch
-git push --delete origin <remote_branches>
+git push --delete <remote> <remote_branches>
 
 # rebase onto
 git rebase --onto <on_branch> <from_commit> <current_branch>
 
+# create branch from commit
+git checkout -b <new_branch> <from_commit>
+
+# push branch to remote
+git push <remote> <local_branches>
+
+% git, patch
+
+# generate format-patch for last N commits
+git format-patch -<patch_count>
+
+# generate format-patch for a commit range
+git format-patch <from_commit>..<to_commit>
+
+# apply patches with 3-way merge
+git am --3way <patch_files>
+
+# abort current patch apply
+git am --abort
+
+# continue patch apply after conflict
+git am --continue
+
+# skip current conflicting patch
+git am --skip
+
+# show current patch being applied [raw]
+git am --show-current-patch=raw
+
+# show current patch being applied [diff]
+git am --show-current-patch=diff
+
+# apply a patch with verbose/reject mode
+git apply --verbose --reject <patch_files>
+
+% git, stash
+
+# stash current changes
+git stash
+
+# list stashes
+git stash list
+
+# apply and drop last stash
+git stash pop
+
+# apply a stash
+git stash apply <stash_entry>
+
+# drop a stash
+git stash drop <stash_entry>
+
+# show stash diff
+git stash show -p <stash_entry>
+
+% git, fetch
+
+# fetch a GitHub PR into a local branch
+git fetch <remote> pull/<pr_number>/head:<pr_branch>
+
+# fetch from a remote
+git fetch <remote>
+
+$ remote: git remote
 $ remote_tags: git ls-remote --tags --refs origin | sed 's/.*refs\/tags\///'
 $ remote_branches: git ls-remote --heads origin | sed 's/.*refs\/heads\///'
 $ on_branch: git for-each-ref --format='%(refname:short)' refs/heads/
-$ from_commit: git log -10 --pretty=format:"%h"
+$ local_branches: git for-each-ref --format='%(refname:short)' refs/heads/
 $ current_branch: git for-each-ref --format='%(refname:short)' refs/heads/
+$ from_commit: git log --oneline -20 --- --column 1
+$ to_commit: git log --oneline -20 --- --column 1
+$ patch_count: echo -e "1\n2\n3\n5\n9\n10\n15\n20" --- --prevent-extra
+$ patch_files: fd -e patch -e mbox --type f --- --multi --expand
+$ stash_entry: git stash list --- --column 1 --delimiter ':'

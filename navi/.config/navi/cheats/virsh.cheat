@@ -1,0 +1,58 @@
+% virsh, vm
+
+# list all VMs
+sudo virsh list --all
+
+# start a VM
+sudo virsh start <vm_name>
+
+# shutdown a VM gracefully
+sudo virsh shutdown <vm_name>
+
+# force stop a VM
+sudo virsh destroy <running_vm>
+
+# reboot a VM
+sudo virsh reboot <running_vm>
+
+# attach console to a VM
+sudo -E virsh console <running_vm>
+
+# edit VM XML config
+sudo virsh edit <vm_name>
+
+# show VM info
+sudo virsh dominfo <vm_name>
+
+# show VM CPU pinning
+virsh vcpupin <vm_name>
+
+# undefine (delete) a VM
+sudo virsh undefine <vm_name>
+
+# take VM snapshot
+sudo virsh snapshot-create-as <vm_name> --name "<snapshot_name>"
+
+# list VM snapshots
+sudo virsh snapshot-list <vm_name>
+
+$ vm_name: sudo virsh list --all --name 2>/dev/null | grep -v '^$'
+$ running_vm: sudo virsh list --name --state-running 2>/dev/null | grep -v '^$'
+
+% qemu
+
+# run QEMU x86_64 with UEFI, KVM and SSH port forwarding
+qemu-system-x86_64 -nographic -enable-kvm \
+   -smp <vcpus> -m <memory_mb> -machine q35 -cpu host \
+   -global ICH9-LPC.disable_s3=1 \
+   -net nic,model=virtio -net user,hostfwd=tcp::<ssh_port>-:22 \
+   -drive file=OVMF_CODE_4M.fd,if=pflash,format=raw,unit=0,readonly=on \
+   -drive file=OVMF_VARS_4M.ms.fd,if=pflash,format=raw,unit=1 \
+   -drive "file=<disk_image>",if=none,format=raw,id=disk1 \
+   -device virtio-blk-pci,drive=disk1,bootindex=1 \
+   -serial mon:stdio
+
+$ vcpus: echo -e "1\n2\n4\n8" --- --prevent-extra
+$ memory_mb: echo -e "1024\n2048\n4096\n8192" --- --prevent-extra
+$ ssh_port: echo -e "8022\n8023\n2222"
+$ disk_image: fd -e img -e qcow2 -e raw --type f --- --preview "file {}"

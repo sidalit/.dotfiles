@@ -13,7 +13,7 @@ sudo pacman -Fy && pacman -F <file>
 pacman -Ql <installed_package> | grep -v '/$'
 
 # list files installed by a package [online]
-pacman -Ql <online_package> | grep -v '/$'
+pacman -Fl <online_package> | grep -v '/$'
 
 # install a package
 sudo pacman -Sy --needed --noconfirm <online_package>
@@ -27,11 +27,23 @@ pacman -Qi <installed_package>
 # remove package
 sudo pacman -R --noconfirm <installed_package>
 
-# update mirrors list
-sudo pacman-mirrors --fasttrack 10
+# remove package with unused dependencies
+sudo pacman -Rns --noconfirm <installed_package>
 
 # remove package ignoring dependencies
 sudo pacman -Rdd <installed_package>
 
-$ installed_package: pacman -Qq
+# update mirrors list
+sudo pacman-mirrors --fasttrack 10
+
+# list orphan packages
+pacman -Qdtq
+
+# remove all orphan packages
+sudo pacman -Rns $(pacman -Qdtq)
+
+# clear package cache
+sudo pacman -Scc --noconfirm
+
+$ installed_package: pacman -Qq --- --preview "pacman -Qi {}"
 $ online_package: pacman -Slq
