@@ -53,7 +53,7 @@ __fzf_files_print() {
 __fzf_dir_mru() {
     local dir
     dir=($(zoxide query -l | fzf --tiebreak=length,end -1 -0 -m -q "'"))
-    [[ -n "${dir[@]}" ]] && __readline_insert__ "${dir[@]}"
+    [[ -n "${dir[*]}" ]] && __readline_insert__ "${dir[@]}"
 }
 
 # cd to selected directory using `fzf`
@@ -75,7 +75,7 @@ __fzf_find() {
     files=$(rg --column --no-heading -v "${regex}" --color=always    |
             fzf -0 -m --ansi -n 3.. -d : -q "'${*:-}"                \
                 --preview 'bat --highlight-line {2} {1}'             \
-                --preview-window +{2}-/2                             |
+                --preview-window '+{2}-/2'                           |
             awk -F: '{print ":e "$1"|:"$2}')
 
     # replace '%' by '\%'
@@ -127,6 +127,96 @@ fkill() {
 
     # default use SIGKILL=9
     [ -n "${pids}" ] && kill -${1:-9} ${pids}
+}
+
+###############################################################################
+#                                  FZF & SNAP                                 #
+###############################################################################
+
+# fzf helper for __fzf_snaps (runs inside fzf via `bash -c`, prints fzf actions)
+#   $1: state dir   $2: ask|run|cancel|esc   [$3: action   $4..: snap names]
+__fzf_snaps_do() {
+    local -r dir="${1}" mode="${2}"
+    local -r restore='unbind(y,n)+change-prompt(Snaps> )'
+
+    case "${mode}" in
+    ask)
+        local -r action="${3}"; shift 3
+        (( $# )) || return 0
+        printf '%s\n' "${action}" "$@" > "${dir}/pending"
+        local label
+        case "${action}" in
+            remove)  label='Remove' ;;
+            purge)   label='Remove --purge' ;;
+            refresh) label='Refresh' ;;
+        esac
+        echo "rebind(y,n)+change-footer()+change-prompt:${label} $*? [y/n] "
+        ;;
+    run)
+        [[ -s "${dir}/pending" ]] || return 0
+        local -a lines cmd
+        mapfile -t lines < "${dir}/pending"
+        rm -f "${dir}/pending"
+        case "${lines[0]}" in
+            remove)  cmd=(snap remove) ;;
+            purge)   cmd=(snap remove --purge) ;;
+            refresh) cmd=(snap refresh) ;;
+            *)       return 0 ;;
+        esac
+        cmd+=("${lines[@]:1}")
+
+        # 1) unprivileged: works after `snap login`, or via polkit (GUI agent);
+        #    snap only allows polkit interaction when stdin is a TTY
+        # 2) fallback: cached sudo credentials, never prompts
+        local out rc in=/dev/null
+        { : </dev/tty; } 2>/dev/null && in=/dev/tty
+        out=$("${cmd[@]}" <"${in}" 2>&1); rc=$?
+        if (( rc )) && [[ "${out}" == *"access denied"* ]]; then
+            out=$(sudo -n "${cmd[@]}" 2>&1); rc=$?
+            (( rc )) && out+=$'\n'"hint: run 'sudo -v' before ALT-S, or 'sudo snap login <email>' once"
+        fi
+        { (( rc )) && echo "✘ ${cmd[*]}" || echo "✔ ${cmd[*]}"; echo "${out}"; } > "${dir}/out"
+        echo "reload-sync(snap list 2>/dev/null)+transform-footer:cat '${dir}/out'"
+        ;;
+    cancel)
+        rm -f "${dir}/pending"
+        echo "${restore}+change-footer(Cancelled)"
+        ;;
+    esc)
+        # ESC cancels a pending confirmation, otherwise quits fzf
+        [[ -e "${dir}/pending" ]] && __fzf_snaps_do "${dir}" cancel || echo abort
+        ;;
+    esac
+}
+
+# manage installed snaps using fzf (multi-select with TAB)
+# actions are confirmed inside fzf with y/n; output is shown in the footer
+# binding: ALT-S
+__fzf_snaps() {
+    local -r dir="$(mktemp -d)"
+    local -r do="__fzf_snaps_do '${dir}'"
+    local selected
+
+    selected=$(
+        export -f __fzf_snaps_do
+        snap list 2>/dev/null |
+        fzf --multi --ansi --header-lines=1 --prompt='Snaps> '              \
+        --with-shell 'bash -c'                                              \
+        --header "<C-P> to toggle preview | <C-D> to remove | <C-X> to remove --purge | <C-R> to refresh" \
+        --preview 'snap info {1}'                                           \
+        --preview-window='right:60%:wrap:hidden'                            \
+        --bind "start:unbind(y,n)"                                          \
+        --bind "ctrl-p:toggle-preview"                                      \
+        --bind "ctrl-d:transform:${do} ask remove {+1}"                     \
+        --bind "ctrl-x:transform:${do} ask purge {+1}"                      \
+        --bind "ctrl-r:transform:${do} ask refresh {+1}"                    \
+        --bind "y:unbind(y,n)+change-prompt(Snaps> )+change-footer(Working...)+clear-multi+bg-transform:${do} run" \
+        --bind "n:transform:${do} cancel"                                   \
+        --bind "esc:transform:${do} esc" |
+        awk '{print $1}')
+
+    rm -rf "${dir}"
+    [[ -n "${selected}" ]] && echo "${selected}"
 }
 
 ###############################################################################
@@ -255,3 +345,5 @@ bind -x '"\M-g": "__fzf_commit"'
 # ALT-C - Navigate into the selected directory
 bind '"\M-c": "__fzf_dir_cd\C-m"'
 
+# ALT-C - Manage snaps
+bind '"\M-s": "__fzf_snaps\C-m"'
