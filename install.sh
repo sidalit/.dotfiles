@@ -10,6 +10,8 @@ set -e
 #  documentation  #
 ###################
 
+# ---- arch/manjaro -----------------------------------------------------------
+
 # Update mirrorlist with the fastest mirrors
 # sudo pacman-mirrors --fasttrack
 
@@ -28,6 +30,12 @@ set -e
 
 # Always run after pacman-mirrors
 # sudo pacman -Syyu
+
+# ---- debian/ubuntu ----------------------------------------------------------
+
+# Mirrors are configured in /etc/apt/sources.list (Debian) or
+# /etc/apt/sources.list.d/ubuntu.sources (Ubuntu). After changing them:
+# sudo apt-get update
 
 ###############
 #  variables  #
@@ -54,6 +62,8 @@ TEMP_GNOME_CONFIG=/tmp/org.gnome.ini.tmp
 BACKGROUND_IMAGE="${HOME}/.wallpapers/wallpaper_001.jpg"
 SCREENSAVER_IMAGE="${HOME}/.wallpapers/wallpaper_002.jpg"
 
+DIR_USER_FONTS="${HOME}/.local/share/fonts"
+
 ##################
 #  repositories  #
 ##################
@@ -62,6 +72,36 @@ REPO_DOTFILES="https://github.com/syedelec/.dotfiles.git"
 REPO_TILIX="https://github.com/syedelec/tilix.git"
 REPO_QOGIR_GTK_THEME="https://github.com/vinceliuice/Qogir-theme"
 REPO_QOGIR_ICN_THEME="https://github.com/vinceliuice/Qogir-icon-theme"
+REPO_TELA_ICN_THEME="https://github.com/vinceliuice/Tela-icon-theme"
+
+###############################################################################
+#                              distro detection                               #
+###############################################################################
+
+if [[ -r /etc/os-release ]]; then
+    . /etc/os-release
+fi
+
+case " ${ID:-} ${ID_LIKE:-} " in
+    *arch*|*manjaro*)
+        DISTRO="arch"
+        ;;
+    *debian*|*ubuntu*)
+        DISTRO="debian"
+        ;;
+    *)
+        if command -v pacman &>/dev/null; then
+            DISTRO="arch"
+        elif command -v apt-get &>/dev/null; then
+            DISTRO="debian"
+        else
+            echo "ERROR: unsupported distribution (need pacman or apt)" >&2
+            exit 1
+        fi
+        ;;
+esac
+
+echo "======= Detected '${DISTRO}' based distribution ======="
 
 ############
 #  pacman  #
@@ -71,7 +111,7 @@ pacman_groups=(
     base base-devel dlang-dmd multilib-devel go
 )
 pacman_utils=(
-    cpio unzip cmake xclip xsel xterm evtest cairo net-tools pam
+    cpio unzip cmake xclip xsel wl-clipboard xterm evtest cairo net-tools pam
     xcb-util-image xcb-util-keysyms tk dos2unix gdu cups help2man repo
     nmap gnu-netcat lsof detox sshfs lzop aspell-en bind-tools ctags
     boost catch2 fmt mbedtls nlohmann-json acpica dtc autoconf-archive
@@ -79,24 +119,23 @@ pacman_utils=(
     qemu-user-static qemu-user-static-binfmt xorg-apps ouch
 )
 pacman_dev=(
-    vim neovim python-pynvim
     dub ldc meson
     python-pip
     rustup
 )
 pacman_tools=(
-    docker docker-compose docker-buildx openssl wget curl git ripgrep
-    fd bat fzf rofi stow tree yay lynx firefox cmus cppcheck shellcheck
+    docker docker-compose docker-buildx openssl wget curl git
+    rofi stow tree yay lynx firefox cmus cppcheck shellcheck
     meld android-tools cargo efitools deluge evince dialog binwalk
     jq texlive-core bash-language-server python-lsp-server git-delta
-    clang jre11-openjdk tree-sitter tree-sitter-cli duf nvme-cli mpd
+    clang jre11-openjdk duf nvme-cli mpd
     mattermost-desktop whois arp-scan uncrustify sd wireguard-tools
     telegram-desktop tcpdump wireshark-cli speedtest-cli keepassxc
     valgrind mplayer mpc fdupes pngquant python-sphinx-autobuild
     python-myst-parser perl-io-socket-ssl perl-authen-sasl
 )
 pacman_customization=(
-    arc-gtk-theme bash-completion feh neofetch gnome-tweaks
+    arc-gtk-theme bash-completion gnome-tweaks
     gnome-shell-extension-caffeine
 )
 pacman_fonts=(
@@ -114,27 +153,127 @@ pacman_lib=(
 
 yay_tools=(
     google-chrome teams teamviewer sublime-text-4 ticktick
-)
-yay_utils=(
-    bfs bitwise zoxide tio libtree zoom standardnotes-desktop
+    standardnotes-desktop
 )
 yay_customization=(
     tela-icon-theme colorpicker
 )
 
+#########
+#  apt  #
+#########
+
+# same logical groups as the pacman arrays, package names verified against
+# Debian 13 (trixie) and Ubuntu 24.04 LTS (noble)
+
+apt_base=(
+    build-essential gcc-multilib g++-multilib golang-go
+)
+apt_utils=(
+    cpio unzip cmake xclip xsel wl-clipboard xterm evtest libcairo2-dev net-tools
+    libpam0g-dev libxcb-image0-dev libxcb-keysyms1-dev tk dos2unix gdu
+    cups help2man nmap netcat-traditional lsof detox sshfs lzop aspell-en
+    bind9-dnsutils universal-ctags libboost-all-dev catch2 libfmt-dev
+    libmbedtls-dev nlohmann-json3-dev acpica-tools device-tree-compiler
+    autoconf-archive gdisk bc virt-manager swtpm minisign qemu-user-static
+    binfmt-support x11-apps x11-utils x11-xserver-utils
+)
+apt_dev=(
+    dub ldc meson
+    python3-pip
+    rustup
+)
+apt_tools=(
+    docker.io docker-compose docker-compose-v2 docker-buildx openssl wget
+    curl git gnupg rofi stow tree lynx
+    firefox cmus cppcheck shellcheck meld adb fastboot efitools deluge
+    evince dialog binwalk jq texlive python3-pylsp git-delta clang
+    default-jre libtree-sitter-dev duf nvme-cli mpd whois
+    arp-scan uncrustify sd wireguard-tools tcpdump tshark speedtest-cli
+    keepassxc valgrind mplayer mpc fdupes pngquant python3-sphinx-autobuild
+    python3-myst-parser libio-socket-ssl-perl libauthen-sasl-perl
+)
+apt_customization=(
+    arc-theme bash-completion fastfetch gnome-tweaks
+    gnome-shell-extension-caffeine
+)
+apt_fonts=(
+    fonts-roboto fonts-font-awesome fonts-firacode fonts-lato
+    fonts-droid-fallback fonts-cantarell xfonts-terminus fonts-noto
+)
+apt_lib=(
+    libev-dev libx11-dev libxkbcommon-x11-dev gnu-efi
+)
+
+###############################################################################
+#                                   helpers                                   #
+###############################################################################
+
+apt_missing=()
+apt_failed=()
+
+# install only the packages available on this release (Debian and Ubuntu
+# repositories differ slightly); missing ones are reported at the end.
+# packages are installed in one transaction when possible, with a
+# per-package fallback so a single conflict (e.g. with a third-party
+# repository like nodesource) does not abort the whole install
+apt_install() {
+    local pkg available=()
+    for pkg in "$@"; do
+        if apt-cache show -- "${pkg}" &>/dev/null; then
+            available+=("${pkg}")
+        else
+            apt_missing+=("${pkg}")
+        fi
+    done
+    if [[ ${#available[@]} -eq 0 ]]; then
+        return 0
+    fi
+    if ! sudo DEBIAN_FRONTEND=noninteractive apt-get ${apt_args} install "${available[@]}"; then
+        for pkg in "${available[@]}"; do
+            sudo DEBIAN_FRONTEND=noninteractive apt-get ${apt_args} install "${pkg}" ||
+                apt_failed+=("${pkg}")
+        done
+    fi
+}
+
+# download and install a vendor .deb
+apt_install_deb() {
+    local url="$1"
+    local deb="/tmp/$(basename "${url}")"
+    wget -qO "${deb}" "${url}"
+    sudo DEBIAN_FRONTEND=noninteractive apt-get ${apt_args} install "${deb}"
+    rm -f "${deb}"
+}
+
 ###############################################################################
 #                                setup install                                #
 ###############################################################################
-sudo sed -i 's|^#\(ParallelDownloads.*\)|\1|' /etc/pacman.conf
-sudo sed -i 's|^#\(Color.*\)|\1|' /etc/pacman.conf
 
-echo "======= Enable default session as X11 ======="
+if [[ ${DISTRO} == "arch" ]]; then
+    sudo sed -i 's|^#\(ParallelDownloads.*\)|\1|' /etc/pacman.conf
+    sudo sed -i 's|^#\(Color.*\)|\1|' /etc/pacman.conf
+fi
 
-sudo sed -i 's|^#\(WaylandEnable.*\)|\1|' /etc/gdm/custom.conf
+echo "======= Display session ======="
+
+# the distro default session (wayland on modern GNOME) is kept as-is;
+# run with FORCE_X11=1 to disable wayland in GDM and log in with X11
+if [[ ${FORCE_X11:-0} == 1 ]]; then
+    # arch/manjaro uses /etc/gdm/custom.conf, debian/ubuntu /etc/gdm3/custom.conf
+    for gdm_conf in /etc/gdm/custom.conf /etc/gdm3/custom.conf; do
+        if [[ -f "${gdm_conf}" ]]; then
+            sudo sed -i 's|^#\(WaylandEnable.*\)|\1|' "${gdm_conf}"
+        fi
+    done
+    echo "X11 forced: wayland disabled in GDM (takes effect at next login)"
+else
+    echo "keeping session type: ${XDG_SESSION_TYPE:-unknown}"
+fi
 
 echo "======= Change default shell ======="
 
-sudo chsh -s /bin/bash
+sudo chsh -s /bin/bash ${USER}
 
 ###############################################################################
 #                                   install                                   #
@@ -142,34 +281,147 @@ sudo chsh -s /bin/bash
 
 yay_args="--needed --noconfirm --cleanmenu=false --diffmenu=false --editmenu=false"
 pacman_args="--needed --noconfirm"
+apt_args="-y"
 
 echo "======= Update current packages ======="
 
-sudo pacman ${pacman_args} -Syyu
+if [[ ${DISTRO} == "arch" ]]; then
+    sudo pacman ${pacman_args} -Syyu
+else
+    sudo apt-get update
+    sudo DEBIAN_FRONTEND=noninteractive apt-get ${apt_args} upgrade
+fi
 
-echo "======= Install groups ======="
+if [[ ${DISTRO} == "arch" ]]; then
 
-# for groups we need to install one by one
-for group in ${pacman_groups[*]}; do
-    sudo pacman -S ${pacman_args} ${group}
-done
+    echo "======= Install groups ======="
 
-echo "======= Install 'ARCH' packages ======="
+    # for groups we need to install one by one
+    for group in ${pacman_groups[*]}; do
+        sudo pacman -S ${pacman_args} ${group}
+    done
 
-sudo pacman -Sy ${pacman_args}           \
-    ${pacman_utils[*]}                   \
-    ${pacman_dev[*]}                     \
-    ${pacman_tools[*]}                   \
-    ${pacman_customization[*]}           \
-    ${pacman_fonts[*]}                   \
-    ${pacman_lib[*]}
+    echo "======= Install 'ARCH' packages ======="
 
-echo "======= Install 'AUR' packages ======="
+    sudo pacman -Sy ${pacman_args}           \
+        ${pacman_utils[*]}                   \
+        ${pacman_dev[*]}                     \
+        ${pacman_tools[*]}                   \
+        ${pacman_customization[*]}           \
+        ${pacman_fonts[*]}                   \
+        ${pacman_lib[*]}
 
-yay -Sy ${yay_args}                      \
-    ${yay_tools[*]}                      \
-    ${yay_utils[*]}                      \
-    ${yay_customization[*]}
+    echo "======= Install 'AUR' packages ======="
+
+    yay -Sy ${yay_args}                      \
+        ${yay_tools[*]}                      \
+        ${yay_utils[*]}                      \
+        ${yay_customization[*]}
+
+else
+
+    echo "======= Install 'DEBIAN' packages ======="
+
+    apt_install                              \
+        "${apt_base[@]}"                     \
+        "${apt_utils[@]}"                    \
+        "${apt_dev[@]}"                      \
+        "${apt_tools[@]}"                    \
+        "${apt_customization[@]}"            \
+        "${apt_fonts[@]}"                    \
+        "${apt_lib[@]}"                      \
+        "${apt_aur_utils[@]}"
+
+    echo "======= Install 'VENDOR' packages ======="
+
+    dpkg -s google-chrome-stable &>/dev/null ||                                \
+        apt_install_deb "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"
+    dpkg -s teamviewer &>/dev/null ||                                          \
+        apt_install_deb "https://download.teamviewer.com/download/linux/teamviewer_amd64.deb"
+    dpkg -s zoom &>/dev/null ||                                                \
+        apt_install_deb "https://zoom.us/client/latest/zoom_amd64.deb"
+
+    # sublime text official apt repository (package is 'sublime-text'),
+    # set up exactly as documented on
+    # https://www.sublimetext.com/docs/linux_repositories.html;
+    # only add the source when none exists yet: a second entry for the same
+    # url with a different Signed-By breaks apt entirely
+    if ! grep -rqs "download.sublimetext.com"                                  \
+        /etc/apt/sources.list /etc/apt/sources.list.d/; then
+        sudo mkdir -p /etc/apt/keyrings
+        wget -qO - https://download.sublimetext.com/sublimehq-pub.gpg |        \
+            sudo tee /etc/apt/keyrings/sublimehq-pub.asc 1>/dev/null
+        echo -e 'Types: deb\nURIs: https://download.sublimetext.com/\nSuites: apt/stable/\nSigned-By: /etc/apt/keyrings/sublimehq-pub.asc' | \
+            sudo tee /etc/apt/sources.list.d/sublime-text.sources 1>/dev/null
+        sudo apt-get update
+    fi
+    apt_install sublime-text
+
+    echo "======= Install 'NPM' packages ======="
+
+    # apt's npm conflicts with third-party node repos (nodesource); only
+    # install it when no npm is present already
+    if ! command -v npm &>/dev/null; then
+        apt_install npm
+    fi
+    sudo npm install -g bash-language-server ||                               \
+        echo "WARNING: npm install bash-language-server failed"
+
+    echo "======= Install 'REPO' launcher ======="
+
+    # google 'repo' is only packaged in contrib/multiverse; use the launcher
+    mkdir -p "${HOME}/bin"
+    curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo         \
+        -o "${HOME}/bin/repo" && chmod +x "${HOME}/bin/repo" ||               \
+        echo "WARNING: repo launcher download failed"
+
+    echo "======= Install 'FONT' downloads ======="
+
+    # fonts without apt packages: terminus nerd, fira sans/mono, roboto mono
+    mkdir -p "${DIR_USER_FONTS}"
+
+    wget -qO /tmp/Terminus.zip                                                \
+        "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Terminus.zip" && \
+        unzip -qo /tmp/Terminus.zip -d "${DIR_USER_FONTS}/terminus-nerd" ||   \
+        echo "WARNING: Terminus Nerd Font download failed"
+
+    wget -qO /tmp/fira.zip                                                    \
+        "https://github.com/mozilla/Fira/archive/refs/heads/master.zip" &&    \
+        unzip -qo /tmp/fira.zip 'Fira-master/ttf/*' -d /tmp &&                \
+        cp /tmp/Fira-master/ttf/*.ttf "${DIR_USER_FONTS}/" ||                 \
+        echo "WARNING: Fira font download failed"
+
+    wget -qO /tmp/robotomono.zip                                              \
+        "https://github.com/googlefonts/RobotoMono/archive/refs/heads/main.zip" && \
+        unzip -qo /tmp/robotomono.zip 'RobotoMono-main/fonts/ttf/*' -d /tmp && \
+        cp /tmp/RobotoMono-main/fonts/ttf/*.ttf "${DIR_USER_FONTS}/" ||       \
+        echo "WARNING: Roboto Mono font download failed"
+
+    rm -f /tmp/Terminus.zip /tmp/fira.zip /tmp/robotomono.zip
+    fc-cache -f 1>/dev/null
+
+    echo "======= Install 'TELA' icon theme ======="
+
+    # tela-icon-theme comes from AUR on arch; install from source here
+    mkdir -p "${DIR_REPOS_UI}" "${HOME}/.icons"
+    if [[ ! -d "${DIR_REPOS_UI}/Tela-icon-theme" ]]; then
+        git clone --depth 1 "${REPO_TELA_ICN_THEME}"                          \
+            "${DIR_REPOS_UI}/Tela-icon-theme" 1>/dev/null
+    fi
+    "${DIR_REPOS_UI}/Tela-icon-theme/install.sh" -d "${HOME}/.icons" ||      \
+        echo "WARNING: Tela icon theme install failed"
+
+    echo "======= Skipped on '${DISTRO}' (no apt packaging) ======="
+
+    echo "teams               -> discontinued upstream; use teams-for-linux or the PWA"
+    echo "ticktick            -> snap install ticktick"
+    echo "standardnotes       -> AppImage from github.com/standardnotes/app"
+    echo "mattermost-desktop  -> official repo: deb.packages.mattermost.com"
+    echo "telegram-desktop    -> flatpak/snap or desktop.telegram.org tarball"
+    echo "ventoy              -> github.com/ventoy/Ventoy releases"
+    echo "colorpicker         -> installed 'gpick' instead"
+
+fi
 
 ###############################################################################
 #                                architecture                                 #
@@ -230,7 +482,13 @@ fi
 cd "${DIR_DOTFILES}"
 
 find * -maxdepth 0 -type d -exec stow --adopt {} \;
-bat cache --build 1>/dev/null
+
+# debian installs bat as 'batcat'
+if command -v bat &>/dev/null; then
+    bat cache --build 1>/dev/null
+elif command -v batcat &>/dev/null; then
+    batcat cache --build 1>/dev/null
+fi
 
 ###############################################################################
 #                                 gnome theme                                 #
@@ -286,13 +544,19 @@ rm -f ${TEMP_GNOME_CONFIG}
 
 echo "======= Setup 'SYSTEMD' ======="
 
-sudo systemctl disable bluetooth
-sudo systemctl disable cups
+sudo systemctl disable bluetooth || true
+sudo systemctl disable cups || true
 sudo systemctl enable --now docker
 
 grep -q docker /etc/group || sudo groupadd docker
 sudo usermod -aG docker ${USER}
-sudo usermod -aG uucp,tty ${USER}
+
+# serial device access group: uucp on arch, dialout on debian
+if [[ ${DISTRO} == "arch" ]]; then
+    sudo usermod -aG uucp,tty ${USER}
+else
+    sudo usermod -aG dialout,tty ${USER}
+fi
 
 ###############################################################################
 #                                   sysctl                                    #
@@ -316,14 +580,29 @@ else
 fi
 
 cd "${DIR_REPOS_TOOLS}/tilix"
-dub build --build=release &> /dev/null
-sudo ./install.sh &> /dev/null
-dconf load /com/gexperts/Tilix/ < "${DIR_DOTFILES}/tilix/.config/tilix/tilix.conf"
+{ dub build --build=release &> /dev/null &&
+    sudo ./install.sh &> /dev/null &&
+    dconf load /com/gexperts/Tilix/ < "${DIR_DOTFILES}/tilix/.config/tilix/tilix.conf"; } ||
+    echo "WARNING: tilix build/install failed"
 
 ###############################################################################
 #                                neovim config                                #
 ###############################################################################
 
 # nvim -c 'PlugInstall --sync' -c '<\CR>' -c 'qa'
+
+###############################################################################
+#                                   summary                                   #
+###############################################################################
+
+if [[ ${DISTRO} == "debian" && ${#apt_missing[@]} -gt 0 ]]; then
+    echo "======= Packages unavailable on this release ======="
+    echo "${apt_missing[*]}"
+fi
+
+if [[ ${DISTRO} == "debian" && ${#apt_failed[@]} -gt 0 ]]; then
+    echo "======= Packages that failed to install ======="
+    echo "${apt_failed[*]}"
+fi
 
 echo "======= Installation done ======="
