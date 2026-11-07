@@ -5,7 +5,7 @@
     "caret_extra_top": 0,
     "caret_extra_width": 0,
     "caret_style": "phase",
-    "theme": "ayu-mirage.sublime-theme",
+    "theme": "auto",
     "color_scheme": "Nord.sublime-color-scheme",
     "drag_text": false,
     "font_face": "EnvyCodeR Nerd Font Mono",
@@ -29,4 +29,6 @@
     "show_line_endings": true,
     "draw_unicode_white_space": "all",
     "index_files": false,
+    "file_icon_theme": [
+    ],
 }
