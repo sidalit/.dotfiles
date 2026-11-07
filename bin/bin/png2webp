@@ -2,9 +2,9 @@
 
 set -Eeuo pipefail
 
-# png2webp.sh
-# Convert PNGs to WebP from an input folder OR single file.
-# Default: input=./originals, output=./ (current folder)
+# png2webpavif.sh
+# Convert PNGs to WebP or AVIF from an input folder OR single file.
+# Default: input=./originals, output=./ (current folder), format=webp
 # Defaults: metadata stripped, parallel jobs = nproc
 
 SCRIPT_NAME="$(basename "$0")"
@@ -14,10 +14,13 @@ INPUT_DIR="./originals"
 OUTPUT_DIR="."
 RECURSIVE=0
 
+FORMAT="webp"     # webp|avif
+
 LOSSLESS=0
 QUALITY=82
-METHOD=6
-SHARP_YUV=1
+METHOD=6          # cwebp only (0-6)
+SPEED=6           # avifenc only (0-10, 0=slowest/best)
+SHARP_YUV=1       # cwebp only
 
 # Metadata stripped by default
 METADATA="none"   # none|all|icc|exif|xmp
@@ -53,27 +56,30 @@ usage() {
   cat >&2 <<EOF
 Usage: $SCRIPT_NAME [options]
 
-Converts PNG files from an input folder (or a single file) to WebP files
-in the output folder, keeping the same base name.
-Defaults: input=./originals, output=./
+Converts PNG files from an input folder (or a single file) to WebP or AVIF
+files in the output folder, keeping the same base name.
+Defaults: input=./originals, output=./, format=webp
 
 Options:
   -i, --input PATH         Input directory or file (default: ./originals)
   -o, --output DIR         Output directory (default: current folder)
   -r, --recursive          Recurse into subfolders (if input is directory)
 
+  -f, --format FMT         Output format: webp|avif (default: webp)
+
   -q, --quality N          Lossy quality 0-100 (default: 82).
                            Ignored in --lossless
-      --lossless           Use lossless WebP (default: lossy)
+      --lossless           Use lossless encoding (default: lossy)
 
       --aggressive         Aggressive lossy compression preset:
-                           sets -q 65, keeps -m 6 and -sharp_yuv (forces lossy mode)
+                           sets -q 65, keeps best effort (forces lossy mode)
 
-  -m, --method N           Compression method 0-6 (default: 6)
-      --no-sharp-yuv       Disable sharp_yuv (enabled by default in lossy mode)
+  -m, --method N           [webp] Compression method 0-6 (default: 6)
+      --speed N            [avif] Encoder speed 0-10 (default: 6, 0=slowest/best)
+      --no-sharp-yuv       [webp] Disable sharp_yuv (enabled by default in lossy)
       --metadata VALUE     Metadata: none|all|icc|exif|xmp (default: none)
 
-      --overwrite          Overwrite existing .webp outputs
+      --overwrite          Overwrite existing outputs
       --dry-run            Print actions without writing files
 
   -j, --jobs N             Parallel jobs (default: nproc)
@@ -82,14 +88,14 @@ Options:
   -h, --help               Show help
 
 Examples:
-  # Convert whole folder
+  # Convert whole folder to WebP
   $SCRIPT_NAME -i ./images
 
-  # Convert single file
-  $SCRIPT_NAME -i ./images/logo.png
+  # Convert whole folder to AVIF
+  $SCRIPT_NAME -i ./images -f avif
 
-  # Aggressive preset
-  $SCRIPT_NAME --aggressive
+  # Convert single file to AVIF with aggressive preset
+  $SCRIPT_NAME -i ./images/logo.png -f avif --aggressive
 EOF
 }
 
@@ -122,11 +128,14 @@ while [[ $# -gt 0 ]]; do
     -o|--output) OUTPUT_DIR="$2"; shift 2 ;;
     -r|--recursive) RECURSIVE=1; shift ;;
 
+    -f|--format) FORMAT="$2"; shift 2 ;;
+
     -q|--quality) QUALITY="$2"; shift 2 ;;
     --lossless) LOSSLESS=1; shift ;;
     --aggressive) AGGRESSIVE=1; shift ;;
 
     -m|--method) METHOD="$2"; shift 2 ;;
+    --speed) SPEED="$2"; shift 2 ;;
     --no-sharp-yuv) SHARP_YUV=0; shift ;;
     --metadata) METADATA="$2"; shift 2 ;;
 
@@ -146,11 +155,17 @@ if [[ "$AGGRESSIVE" -eq 1 ]]; then
   LOSSLESS=0
   QUALITY=65
   METHOD=6
+  SPEED=4
   SHARP_YUV=1
 fi
 
 # -------- validation --------
-need_cmd cwebp
+case "$FORMAT" in
+  webp) need_cmd cwebp; EXT="webp" ;;
+  avif) need_cmd avifenc; EXT="avif" ;;
+  *) die "Invalid --format value: $FORMAT (use webp|avif)" ;;
+esac
+
 need_cmd find
 need_cmd xargs
 
@@ -159,10 +174,15 @@ need_cmd xargs
 
 [[ -d "$OUTPUT_DIR" ]] || mkdir -p "$OUTPUT_DIR" || die "Cannot create output directory: $OUTPUT_DIR"
 
-validate_int_range "$METHOD" 0 6 "Method"
 validate_int_range "$JOBS" 1 512 "Jobs"
 if [[ "$LOSSLESS" -eq 0 ]]; then
   validate_int_range "$QUALITY" 0 100 "Quality"
+fi
+
+if [[ "$FORMAT" == "webp" ]]; then
+  validate_int_range "$METHOD" 0 6 "Method"
+else
+  validate_int_range "$SPEED" 0 10 "Speed"
 fi
 
 case "$METADATA" in
@@ -184,26 +204,49 @@ fi
 
 log "INFO" "Input:     $INPUT_DIR"
 log "INFO" "Output:    $OUTPUT_DIR"
+log "INFO" "Format:    $FORMAT"
 log "INFO" "Mode:      $([[ "$LOSSLESS" -eq 1 ]] && echo "lossless" || echo "lossy")"
 log "INFO" "Quality:   $QUALITY $([[ "$AGGRESSIVE" -eq 1 ]] && echo '(aggressive preset)')"
-log "INFO" "Method:    $METHOD"
+if [[ "$FORMAT" == "webp" ]]; then
+  log "INFO" "Method:    $METHOD"
+  log "INFO" "SharpYUV:  $SHARP_YUV"
+else
+  log "INFO" "Speed:     $SPEED"
+fi
 log "INFO" "Recursive: $RECURSIVE"
 log "INFO" "Jobs:      $JOBS"
 log "INFO" "Overwrite: $OVERWRITE"
 log "INFO" "Dry-run:   $DRY_RUN"
 log "INFO" "Metadata:  $METADATA"
-log "INFO" "SharpYUV:  $SHARP_YUV"
 
-# -------- build cwebp args --------
-CWEBP_ARGS=()
-if [[ "$LOSSLESS" -eq 1 ]]; then
-  CWEBP_ARGS+=(-lossless)
+# -------- build encoder args --------
+ENC_ARGS=()
+if [[ "$FORMAT" == "webp" ]]; then
+  if [[ "$LOSSLESS" -eq 1 ]]; then
+    ENC_ARGS+=(-lossless)
+  else
+    ENC_ARGS+=(-q "$QUALITY")
+  fi
+  ENC_ARGS+=(-m "$METHOD" -metadata "$METADATA")
+  if [[ "$SHARP_YUV" -eq 1 && "$LOSSLESS" -eq 0 ]]; then
+    ENC_ARGS+=(-sharp_yuv)
+  fi
 else
-  CWEBP_ARGS+=(-q "$QUALITY")
-fi
-CWEBP_ARGS+=(-m "$METHOD" -metadata "$METADATA")
-if [[ "$SHARP_YUV" -eq 1 && "$LOSSLESS" -eq 0 ]]; then
-  CWEBP_ARGS+=(-sharp_yuv)
+  # avifenc
+  if [[ "$LOSSLESS" -eq 1 ]]; then
+    ENC_ARGS+=(--lossless)
+  else
+    ENC_ARGS+=(-q "$QUALITY")
+  fi
+  ENC_ARGS+=(-s "$SPEED" -j "$JOBS")
+  # Metadata mapping (avifenc: --ignore-exif --ignore-xmp --ignore-icc)
+  case "$METADATA" in
+    none) ENC_ARGS+=(--ignore-exif --ignore-xmp --ignore-icc) ;;
+    all)  : ;;
+    icc)  ENC_ARGS+=(--ignore-exif --ignore-xmp) ;;
+    exif) ENC_ARGS+=(--ignore-xmp --ignore-icc) ;;
+    xmp)  ENC_ARGS+=(--ignore-exif --ignore-icc) ;;
+  esac
 fi
 
 # -------- find files --------
@@ -231,10 +274,10 @@ log "INFO" "Found $COUNT file(s) to process."
 convert_one() {
   local img="$1"
   local base out
-
+  
   # Remove extension .png (or others if input was manual file)
   base="$(basename "$img" .png)"
-  out="$OUTPUT_DIR/${base}.webp"
+  out="$OUTPUT_DIR/${base}.${EXT}"
 
   if [[ -f "$out" && "$OVERWRITE" -eq 0 ]]; then
     [[ "$VERBOSE" -eq 1 ]] && log "SKIP" "Exists: $out"
@@ -245,16 +288,28 @@ convert_one() {
   in_size="$(file_size_bytes "$img")"
 
   if [[ "$DRY_RUN" -eq 1 ]]; then
-    log "DRYRUN" "cwebp ${CWEBP_ARGS[*]} \"$img\" -o \"$out\""
+    if [[ "$FORMAT" == "webp" ]]; then
+      log "DRYRUN" "cwebp ${ENC_ARGS[*]} \"$img\" -o \"$out\""
+    else
+      log "DRYRUN" "avifenc ${ENC_ARGS[*]} \"$img\" \"$out\""
+    fi
     return 0
   fi
 
   # Safer: write to temp then atomically move
   local tmp="${out}.tmp.$$"
-  if ! cwebp "${CWEBP_ARGS[@]}" "$img" -o "$tmp" >/dev/null 2>&1; then
-    rm -f "$tmp" >/dev/null 2>&1 || true
-    log "ERROR" "Failed: $img"
-    return 1
+  if [[ "$FORMAT" == "webp" ]]; then
+    if ! cwebp "${ENC_ARGS[@]}" "$img" -o "$tmp" >/dev/null 2>&1; then
+      rm -f "$tmp" >/dev/null 2>&1 || true
+      log "ERROR" "Failed: $img"
+      return 1
+    fi
+  else
+    if ! avifenc "${ENC_ARGS[@]}" "$img" "$tmp" >/dev/null 2>&1; then
+      rm -f "$tmp" >/dev/null 2>&1 || true
+      log "ERROR" "Failed: $img"
+      return 1
+    fi
   fi
   mv -f "$tmp" "$out"
 
@@ -268,8 +323,8 @@ convert_one() {
 }
 
 export -f convert_one log ts die human_bytes file_size_bytes
-export OUTPUT_DIR OVERWRITE DRY_RUN VERBOSE
-export -a CWEBP_ARGS
+export OUTPUT_DIR OVERWRITE DRY_RUN VERBOSE FORMAT EXT
+export -a ENC_ARGS
 
 # -------- run conversion --------
 log "INFO" "Converting..."
@@ -281,5 +336,4 @@ if [[ "$FAIL" -eq 1 ]]; then
   die "Some conversions failed. Check logs above."
 fi
 
-log "INFO" "Done. WebP files written to: $OUTPUT_DIR"
-
+log "INFO" "Done. $FORMAT files written to: $OUTPUT_DIR"
