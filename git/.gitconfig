@@ -27,7 +27,7 @@
 
 [user]
     name = Sid-Ali Teir
-    userconfigonly = true
+    useConfigOnly = true
 
 [include]
     path = ~/.gitalias
